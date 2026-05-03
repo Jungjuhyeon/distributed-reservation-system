@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: reservation
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/reservation?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
+    username: root
+    password: pwd1234
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+        show_sql: true
+        dialect: org.hibernate.dialect.MySQLDialect
+    open-in-view: false
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
