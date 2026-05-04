@@ -1,4 +1,4 @@
-package com.jung.reservation.booking.domain;
+package com.jung.reservation.booking.domain.model.enumeration;
 
 public enum BookingStatus {
     PENDING,    // 결제 진행 중

@@ -1,4 +1,4 @@
-package com.jung.reservation.user.domain;
+package com.jung.reservation.user.domain.model;
 
 import com.jung.reservation.common.entity.BaseEntity;
 import jakarta.persistence.*;

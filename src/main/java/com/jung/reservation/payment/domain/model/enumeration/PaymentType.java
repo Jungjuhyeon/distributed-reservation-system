@@ -1,4 +1,4 @@
-package com.jung.reservation.payment.domain;
+package com.jung.reservation.payment.domain.model.enumeration;
 
 public enum PaymentType {
     CREDIT_CARD, // 신용카드

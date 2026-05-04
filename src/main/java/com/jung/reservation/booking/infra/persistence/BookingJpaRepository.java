@@ -1,6 +1,6 @@
 package com.jung.reservation.booking.infra.persistence;
 
-import com.jung.reservation.booking.domain.Booking;
+import com.jung.reservation.booking.domain.model.Booking;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;

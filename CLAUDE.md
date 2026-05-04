@@ -25,6 +25,11 @@ Distributed reservation system built with Spring Boot 3.5.14, Java 21, Gradle (G
 - **Entry point**: `ReservationApplication.java`
 - Fresh skeleton — no domain layers defined yet. Follow standard layered architecture: controller → service → repository → entity.
 
+## 참조 문서
+
+- `.claude/ai-context/git-convention.md` — Git 커밋 컨벤션
+- `.claude/ai-context/architecture.md` — 헥사고날 아키텍처 + DDD 패키지 구조
+
 ## Infrastructure
 
 - **MySQL**: Primary datastore (requires running MySQL instance)

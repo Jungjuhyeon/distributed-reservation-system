@@ -1,6 +1,6 @@
 package com.jung.reservation.user.infra.persistence;
 
-import com.jung.reservation.user.domain.UserPoint;
+import com.jung.reservation.user.domain.model.UserPoint;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;

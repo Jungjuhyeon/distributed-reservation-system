@@ -1,9 +1,10 @@
-package com.jung.reservation.booking.domain;
+package com.jung.reservation.booking.domain.model;
 
-import com.jung.reservation.accommodation.domain.RoomType;
+import com.jung.reservation.accommodation.domain.model.RoomType;
+import com.jung.reservation.booking.domain.model.enumeration.BookingStatus;
 import com.jung.reservation.common.entity.BaseEntity;
-import com.jung.reservation.promotion.domain.PromotionRoomType;
-import com.jung.reservation.user.domain.User;
+import com.jung.reservation.promotion.domain.model.PromotionRoomType;
+import com.jung.reservation.user.domain.model.User;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;

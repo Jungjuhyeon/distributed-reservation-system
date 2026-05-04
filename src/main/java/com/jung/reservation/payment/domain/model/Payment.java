@@ -1,7 +1,9 @@
-package com.jung.reservation.payment.domain;
+package com.jung.reservation.payment.domain.model;
 
-import com.jung.reservation.booking.domain.Booking;
+import com.jung.reservation.booking.domain.model.Booking;
 import com.jung.reservation.common.entity.BaseEntity;
+import com.jung.reservation.payment.domain.model.enumeration.PaymentStatus;
+import com.jung.reservation.payment.domain.model.enumeration.PaymentType;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;

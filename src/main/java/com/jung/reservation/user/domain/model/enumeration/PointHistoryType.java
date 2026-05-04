@@ -1,4 +1,4 @@
-package com.jung.reservation.user.domain;
+package com.jung.reservation.user.domain.model.enumeration;
 
 public enum PointHistoryType {
     EARN,   // 포인트 적립

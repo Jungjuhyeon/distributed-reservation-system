@@ -1,6 +1,6 @@
-package com.jung.reservation.promotion.domain;
+package com.jung.reservation.promotion.domain.model;
 
-import com.jung.reservation.accommodation.domain.RoomType;
+import com.jung.reservation.accommodation.domain.model.RoomType;
 import com.jung.reservation.common.entity.BaseEntity;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
