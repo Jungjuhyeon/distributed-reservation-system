@@ -50,59 +50,40 @@
 
 ---
 
-## Phase 3: Redis Lua Script (재고 정합성 + 공정성)
+## Phase 3: Redis Lua Script (재고 정합성 + 공정성 + 멱등성)
 
-**목표**: 선착순 재고 차감의 원자적 처리, 오픈 시간 검증, Rate Limiting
+**목표**: 시간검증 → Rate Limit → 멱등성 → 재고차감을 단일 Lua Script로 원자적 처리
 
 **구현 항목**
-- `StockService`: Lua Script 로딩 및 실행
-- Lua Script 작성 (`stock.lua`)
-  - `rate_limit:{userId}` 초과 → RATE_LIMITED
+- Lua Script 작성 (시간검증 → Rate Limit → 멱등성 → 재고차감)
   - `sale_start:promotion:{promotionId}` vs `Redis TIME` → NOT_STARTED
-  - `stock:promotionRoomType:{id}` DECR → 0 미만이면 복구 후 SOLD_OUT
-  - 통과 → rate_limit 증가 → SUCCESS
-- 앱 기동 시 Redis에 프로모션 재고/판매시작시간 초기화 (`ApplicationRunner`)
-
-**기술**
-- `RedisScript<String>` + `DefaultRedisScript` (Lua Script 로딩)
-- `RedisTemplate.execute(RedisScript, keys, args)` 로 실행
-- Redis `TIME` 명령으로 서버 시간 통일 (분산 환경 공정성)
-- Lua Script 내 `redis.call('TIME')`, `DECR`, `INCR`, `SET EX`
-
-**완료 기준**: 멀티스레드 동시 요청 시 재고 초과판매 없음 확인, 오픈 전 요청 차단 확인
-
----
-
-## Phase 4: 멱등성 처리
-
-**목표**: 결제 버튼 연타/새로고침에 의한 중복 주문 방지
-
-**구현 항목**
-- Booking API 진입 시 `idempotency:booking:{orderId}` SET NX (TTL 30초, PROCESSING)
-- 이미 존재하면 기존 결과 반환 (연타 차단)
-- 결제 성공 → TTL 10분 COMPLETED로 갱신
-- 결제 실패 → 키 삭제 (DEL)
+  - `rate_limit:{userId}` INCR → 초과 시 RATE_LIMITED
+  - `idempotency:booking:{orderId}` SET NX → 이미 존재하면 ALREADY_PROCESSED
+  - `stock:promotionRoomType:{id}` DECR → 0 미만이면 INCR 복구 + 멱등성 키 삭제 후 SOLD_OUT
+  - 통과 → SUCCESS
+- `StockOutputPort` + `StockRedisAdapter` (Lua Script 실행)
+- 성공 시 멱등성 키 COMPLETED(TTL 10분)로 변경
+- 실패 시 멱등성 키 삭제(DEL)
 - DB `booking.order_id` UNIQUE 제약으로 영구 중복 방지
 
 **기술**
-- `RedisTemplate.opsForValue().setIfAbsent(key, value, timeout)` (SET NX EX)
-- `RedisTemplate.expire()` (TTL 갱신)
-- `RedisTemplate.delete()` (실패 시 삭제)
-- JPA `@Column(unique = true)` on `booking.order_id`
+- `DefaultRedisScript` + 인라인 Lua Script (`StockLuaScript` 상수 클래스)
+- `RedisTemplate.execute(RedisScript, keys, args)` 로 실행
+- Redis `TIME` 명령으로 서버 시간 통일 (분산 환경 공정성)
+- Redis 싱글 스레드로 "먼저 도달한 요청이 먼저 처리" = 공정성 보장
 
-**완료 기준**: 동일 orderId 연속 요청 시 단일 처리, 실패 후 재시도 가능 확인
+**완료 기준**: 동시성/오픈시간/Rate Limit/멱등성/품절 테스트 통과
 
 ---
 
-## Phase 5: Booking API 기본 플로우 (포인트 단건 결제)
+## Phase 4: Booking API 기본 플로우 (포인트 단건 결제)
 
 **목표**: POST /api/booking의 기본 결제 + 주문 생성 동작
 
 **구현 항목**
 - `BookingController` → `BookingService`
 - 사전 금액 검증: Redis 캐시(`checkout:{orderId}`)의 amount vs 요청 totalAmount
-- Phase 3 Lua Script 실행 (재고 차감)
-- Phase 4 멱등성 체크 통합
+- Phase 3 Lua Script 실행 (시간검증 + Rate Limit + 멱등성 + 재고차감)
 - 포인트 잔액 검증 후 차감
 - Booking + Payment DB 저장
 - `PaymentProcessor` 인터페이스 정의
@@ -117,7 +98,7 @@
 
 ---
 
-## Phase 6: 결제 확장 (복합 결제 + PG Mock)
+## Phase 5: 결제 확장 (복합 결제 + PG Mock)
 
 **목표**: 신용카드/Y페이 PG 결제 + 복합 결제 지원
 
@@ -137,7 +118,7 @@
 
 ---
 
-## Phase 7: 장애 대응 (결제 실패 보상 + Redis Fallback)
+## Phase 6: 장애 대응 (결제 실패 보상 + Redis Fallback)
 
 **목표**: 결제 실패 시 재고 복구, Redis 장애 시 DB Fallback
 
@@ -159,7 +140,7 @@
 
 ---
 
-## Phase 8: 테스트 & 검증
+## Phase 7: 테스트 & 검증
 
 **목표**: 전체 시나리오 검증
 

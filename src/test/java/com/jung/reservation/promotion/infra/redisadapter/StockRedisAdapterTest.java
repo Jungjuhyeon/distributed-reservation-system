@@ -11,6 +11,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.time.Instant;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -33,14 +34,12 @@ class StockRedisAdapterTest {
 
     @BeforeEach
     void setUp() {
-        // Redis 전체 초기화
         redisTemplate.getConnectionFactory().getConnection().serverCommands().flushDb();
     }
 
     @Test
     @DisplayName("동시 100명 요청 시 재고 10개만 성공 (초과판매 없음)")
     void concurrentRequests_noOverselling() throws InterruptedException {
-        // 재고 10개, 오픈 시간은 과거로 세팅
         redisTemplate.opsForValue().set("stock:promotionRoomType:" + PROMOTION_ROOM_TYPE_ID, "10");
         redisTemplate.opsForValue().set("sale_start:promotion:" + PROMOTION_ID,
                 String.valueOf(Instant.now().getEpochSecond() - 60));
@@ -51,10 +50,11 @@ class StockRedisAdapterTest {
         AtomicInteger successCount = new AtomicInteger(0);
 
         for (int i = 0; i < threadCount; i++) {
-            long userId = 1000 + i; // 각각 다른 유저
+            long userId = 1000 + i;
+            String orderId = "ORD-TEST-" + UUID.randomUUID();
             executor.submit(() -> {
                 try {
-                    StockResult result = stockOutputPort.decreaseStock(userId, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID);
+                    StockResult result = stockOutputPort.decreaseStock(userId, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID, orderId);
                     if (result == StockResult.SUCCESS) {
                         successCount.incrementAndGet();
                     }
@@ -69,7 +69,6 @@ class StockRedisAdapterTest {
 
         assertThat(successCount.get()).isEqualTo(10);
 
-        // Redis 재고가 0인지 확인
         Object remainingStock = redisTemplate.opsForValue().get("stock:promotionRoomType:" + PROMOTION_ROOM_TYPE_ID);
         assertThat(Integer.parseInt(remainingStock.toString())).isEqualTo(0);
     }
@@ -78,11 +77,10 @@ class StockRedisAdapterTest {
     @DisplayName("오픈 전 요청 차단")
     void beforeSaleStart_blocked() {
         redisTemplate.opsForValue().set("stock:promotionRoomType:" + PROMOTION_ROOM_TYPE_ID, "10");
-        // 오픈 시간을 1시간 뒤로 세팅
         redisTemplate.opsForValue().set("sale_start:promotion:" + PROMOTION_ID,
                 String.valueOf(Instant.now().getEpochSecond() + 3600));
 
-        StockResult result = stockOutputPort.decreaseStock(2000L, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID);
+        StockResult result = stockOutputPort.decreaseStock(2000L, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID, "ORD-TEST-1");
 
         assertThat(result).isEqualTo(StockResult.NOT_STARTED);
     }
@@ -96,16 +94,14 @@ class StockRedisAdapterTest {
 
         Long userId = 3000L;
 
-        // 1~3번째 요청: 성공
-        assertThat(stockOutputPort.decreaseStock(userId, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID))
+        assertThat(stockOutputPort.decreaseStock(userId, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID, "ORD-TEST-A"))
                 .isEqualTo(StockResult.SUCCESS);
-        assertThat(stockOutputPort.decreaseStock(userId, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID))
+        assertThat(stockOutputPort.decreaseStock(userId, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID, "ORD-TEST-B"))
                 .isEqualTo(StockResult.SUCCESS);
-        assertThat(stockOutputPort.decreaseStock(userId, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID))
+        assertThat(stockOutputPort.decreaseStock(userId, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID, "ORD-TEST-C"))
                 .isEqualTo(StockResult.SUCCESS);
 
-        // 4번째 요청: Rate Limit
-        assertThat(stockOutputPort.decreaseStock(userId, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID))
+        assertThat(stockOutputPort.decreaseStock(userId, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID, "ORD-TEST-D"))
                 .isEqualTo(StockResult.RATE_LIMITED);
     }
 
@@ -116,12 +112,26 @@ class StockRedisAdapterTest {
         redisTemplate.opsForValue().set("sale_start:promotion:" + PROMOTION_ID,
                 String.valueOf(Instant.now().getEpochSecond() - 60));
 
-        // 첫 번째: 성공
-        assertThat(stockOutputPort.decreaseStock(4000L, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID))
+        assertThat(stockOutputPort.decreaseStock(4000L, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID, "ORD-TEST-X"))
                 .isEqualTo(StockResult.SUCCESS);
 
-        // 두 번째: 품절
-        assertThat(stockOutputPort.decreaseStock(4001L, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID))
+        assertThat(stockOutputPort.decreaseStock(4001L, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID, "ORD-TEST-Y"))
                 .isEqualTo(StockResult.SOLD_OUT);
+    }
+
+    @Test
+    @DisplayName("동일 orderId 중복 요청 시 ALREADY_PROCESSED 반환")
+    void idempotency_blocksAlreadyProcessed() {
+        redisTemplate.opsForValue().set("stock:promotionRoomType:" + PROMOTION_ROOM_TYPE_ID, "10");
+        redisTemplate.opsForValue().set("sale_start:promotion:" + PROMOTION_ID,
+                String.valueOf(Instant.now().getEpochSecond() - 60));
+
+        String orderId = "ORD-TEST-SAME";
+
+        assertThat(stockOutputPort.decreaseStock(5000L, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID, orderId))
+                .isEqualTo(StockResult.SUCCESS);
+
+        assertThat(stockOutputPort.decreaseStock(5000L, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID, orderId))
+                .isEqualTo(StockResult.ALREADY_PROCESSED);
     }
 }

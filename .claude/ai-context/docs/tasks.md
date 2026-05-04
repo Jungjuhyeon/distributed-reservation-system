@@ -26,36 +26,31 @@
 - [x] Redis 주문서 캐시 저장 (checkout:{orderId} → {amount}, TTL 10분)
 - [x] API 호출 테스트 (상품/포인트/orderId 반환 확인)
 
-## Phase 3: Redis Lua Script (재고 정합성)
-- [x] stock.lua 작성 (rate_limit → 시간검증 → 재고차감)
-- [x] StockService 생성 (StockOutputPort + StockRedisAdapter + StockLuaScript)
-- [x] ~~ApplicationRunner~~ → 테스트에서 직접 Redis 세팅 (프로모션 생성 시 처리 예정)
+## Phase 3: Redis Lua Script (재고 정합성 + 공정성 + 멱등성)
+- [x] Lua Script 작성 (시간검증 → Rate Limit → 재고차감)
+- [x] StockOutputPort + StockRedisAdapter + StockLuaScript
+- [x] Lua Script에 멱등성 통합 (시간검증 → Rate Limit → 멱등성 → 재고차감)
+- [x] 성공 시 COMPLETED 상태 변경 (TTL 10분)
+- [x] 실패 시 멱등성 키 삭제 (DEL)
 - [x] 멀티스레드 동시 요청 테스트 (초과판매 없음 확인)
 - [x] 오픈 전 요청 차단 테스트
 - [x] Rate Limit 동작 테스트
+- [x] 멱등성 테스트 (동일 orderId 중복 요청 차단)
 
-## Phase 4: 멱등성 처리
-- [ ] idempotency:booking:{orderId} SET NX 구현 (TTL 30초 PROCESSING)
-- [ ] 중복 요청 시 기존 결과 반환 로직
-- [ ] 성공 시 COMPLETED 상태 변경 (TTL 10분)
-- [ ] 실패 시 키 삭제 (DEL)
-- [ ] 동일 orderId 연속 요청 테스트
-
-## Phase 5: Booking API 기본 플로우
+## Phase 4: Booking API 기본 플로우
 - [ ] BookingRequest DTO 생성
 - [ ] BookingResponse DTO 생성
 - [ ] BookingController 생성 (POST /api/booking)
 - [ ] BookingService 생성
 - [ ] 사전 금액 검증 (checkout 캐시 amount vs totalAmount)
 - [ ] Lua Script 실행 통합 (Phase 3)
-- [ ] 멱등성 체크 통합 (Phase 4)
 - [ ] PaymentProcessor 인터페이스 정의 (pay, cancel)
 - [ ] YPointPaymentProcessor 구현 (포인트 차감)
 - [ ] PaymentProcessorRegistry 구현
 - [ ] Booking + Payment DB 저장
 - [ ] 포인트 단건 결제 E2E 테스트
 
-## Phase 6: 결제 확장 (복합 결제 + PG Mock)
+## Phase 5: 결제 확장 (복합 결제 + PG Mock)
 - [ ] PgClient 인터페이스 정의
 - [ ] PgClient Mock 구현체 작성
 - [ ] CreditCardPaymentProcessor 구현
@@ -66,7 +61,7 @@
 - [ ] 신용카드+포인트 복합 결제 테스트
 - [ ] 부분 실패 롤백 테스트
 
-## Phase 7: 장애 대응
+## Phase 6: 장애 대응
 - [ ] 결제 실패 시 Redis 재고 복구 (INCR)
 - [ ] 포인트 차감 후 PG 실패 시 포인트 환불
 - [ ] build.gradle에 resilience4j 의존성 추가
@@ -75,7 +70,7 @@
 - [ ] DB 비관적 락 Fallback 구현 (SELECT FOR UPDATE)
 - [ ] Redis 다운 시 Fallback 동작 테스트
 
-## Phase 8: 테스트 & 검증
+## Phase 7: 테스트 & 검증
 - [ ] 단위 테스트: 각 Service
 - [ ] 단위 테스트: 각 PaymentProcessor
 - [ ] 통합 테스트: Checkout → Booking 전체 플로우

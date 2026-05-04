@@ -45,13 +45,12 @@
 ```
 
 **처리 흐름**
-1. **멱등성 체크** — `idempotency:booking:{orderId}` 키로 연타 요청 선제 차단 (`SET NX`, TTL 30초 PROCESSING)
-2. **사전 금액 검증** — `checkout:{orderId}`의 원본 금액과 요청 `totalAmount` 일치 여부 비교 (Fail-Fast)
-3. **Redis Lua Script** — 오픈 시간 검증 + 선착순 재고 차감을 원자적으로 수행
-4. **포인트 검증** — DB에서 유저의 실제 포인트 잔액이 요청한 포인트 사용 금액 이상인지 확인
-5. **PG 승인** — 카드/Y페이 결제 금액에 대해 외부 PG 승인 호출 (orderId를 PG 주문번호로 사용)
-6. **DB 영구 저장** — booking 테이블에 주문 생성, 포인트 차감 반영
-7. **성공/실패 처리** — 성공 시 멱등성 키 상태를 COMPLETED(TTL 10분)로 변경 / 실패 시 재고 복구(INCR) + 멱등성 키 삭제(DEL)
+1. **사전 금액 검증** — `checkout:{orderId}`의 원본 금액과 요청 `totalAmount` 일치 여부 비교 (Fail-Fast)
+2. **Redis Lua Script (원자적 처리)** — 시간검증 → Rate Limit → 멱등성 → 재고차감을 단일 스크립트로 실행
+3. **포인트 검증** — DB에서 유저의 실제 포인트 잔액이 요청한 포인트 사용 금액 이상인지 확인
+4. **PG 승인** — 카드/Y페이 결제 금액에 대해 외부 PG 승인 호출 (orderId를 PG 주문번호로 사용)
+5. **DB 영구 저장** — booking 테이블에 주문 생성, 포인트 차감 반영
+6. **성공/실패 처리** — 성공 시 멱등성 키 상태를 COMPLETED(TTL 10분)로 변경 / 실패 시 재고 복구(INCR) + 멱등성 키 삭제(DEL)
 
 ---
 
@@ -65,15 +64,13 @@
 | DB 주문 식별자 | `booking.order_id` (UNIQUE) |
 | 멱등성 키 | `X-Idempotency-Key` 헤더 + Redis `idempotency:booking:{orderId}` |
 
-### 3.2 재고 정합성 및 공정성
+### 3.2 재고 정합성 + 공정성 + 멱등성 (단일 Lua Script)
 
-- Redis `TIME`으로 시간 통일 (서버별 로컬 시간 차이 제거)
-- 시간 검증 → 재고 차감을 단일 Lua Script로 원자적 실행
+- 시간검증 → Rate Limit → 멱등성 → 재고차감을 **단일 Lua Script**로 원자적 실행
+- Redis 싱글 스레드 특성으로 "먼저 도달한 요청이 먼저 처리" = 공정성 보장
+- Java ↔ Redis 왕복 최소화로 네트워크 지연에 의한 순서 역전 방지
 - 500~1,000 TPS에서 Lua Script 성능 충분 (Redis 10만+ ops/sec)
-- 사용자별 초당 1회 제한으로 매크로 방지
-
-### 3.3 멱등성 처리
-
+- 사용자별 초당 3회 제한으로 매크로 방지
 - Checkout에서 `orderId` 발급 → Booking에서 `X-Idempotency-Key`로 전송
 - DB `booking.order_id` UNIQUE 제약으로 이중 삽입 영구 방지
 
@@ -216,15 +213,16 @@ PaymentProcessor (interface)
 
 ---
 
-## 5. Lua Script
+## 5. Lua Script (원자적 선착순 처리)
 
 ```
-입력: productId, userId, orderId
+입력: userId, promotionId, promotionRoomTypeId, orderId
 처리:
-  1. rate_limit:{userId} 초과 → RATE_LIMITED
-  2. sale_start:{productId} vs Redis TIME → NOT_STARTED
-  3. stock:{productId} DECR → 0 미만이면 복구 후 SOLD_OUT
-  4. 통과 → rate_limit 증가 → SUCCESS
+  1. sale_start:promotion:{promotionId} vs Redis TIME → NOT_STARTED
+  2. rate_limit:{userId} INCR → 초과 시 RATE_LIMITED
+  3. idempotency:booking:{orderId} SET NX → 이미 존재하면 ALREADY_PROCESSED
+  4. stock:promotionRoomType:{id} DECR → 0 미만이면 INCR 복구 + 멱등성 키 삭제 후 SOLD_OUT
+  5. 통과 → SUCCESS
 ```
 
 ---

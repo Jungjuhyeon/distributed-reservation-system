@@ -1,6 +1,7 @@
 package com.jung.reservation.booking.infra.redisadapter;
 
 import com.jung.reservation.booking.application.outputport.CheckoutCacheOutputPort;
+import com.jung.reservation.common.util.RedisKeyPrefix;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
@@ -16,7 +17,7 @@ public class CheckoutCacheAdapter implements CheckoutCacheOutputPort {
 
     @Override
     public void saveCheckoutCache(String orderId, Long totalAmount) {
-        String key = "checkout:" + orderId;
+        String key = RedisKeyPrefix.CHECKOUT + orderId;
         redisTemplate.opsForValue().set(key, String.valueOf(totalAmount), CHECKOUT_CACHE_TTL_MINUTES, TimeUnit.MINUTES);
     }
 }
