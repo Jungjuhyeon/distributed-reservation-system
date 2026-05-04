@@ -18,13 +18,13 @@
 - [x] bootRun 후 테이블 생성 확인
 
 ## Phase 2: Checkout API
-- [ ] RedisConfig 설정 (RedisTemplate, 직렬화)
-- [ ] CheckoutResponse DTO 생성
-- [ ] CheckoutController 생성 (GET /api/checkout/{promotionRoomTypeId})
-- [ ] CheckoutService 생성
-- [ ] orderId 생성 로직 (ORD-yyyyMMdd-UUID)
-- [ ] Redis 주문서 캐시 저장 (checkout:{orderId} → {amount, userId}, TTL 10분)
-- [ ] API 호출 테스트 (상품/포인트/orderId 반환 확인)
+- [x] RedisConfig 설정 (RedisTemplate, 직렬화)
+- [x] CheckoutResponse DTO 생성
+- [x] CheckoutController 생성 (GET /api/checkout/{roomTypeId}?userId&promotionRoomTypeId=optional)
+- [x] CheckoutService 생성 (CheckoutUseCase + CheckoutInputPort)
+- [x] orderId 생성 로직 (ORD-yyyyMMdd-UUID)
+- [x] Redis 주문서 캐시 저장 (checkout:{orderId} → {amount}, TTL 10분)
+- [x] API 호출 테스트 (상품/포인트/orderId 반환 확인)
 
 ## Phase 3: Redis Lua Script (재고 정합성)
 - [ ] stock.lua 작성 (rate_limit → 시간검증 → 재고차감)
