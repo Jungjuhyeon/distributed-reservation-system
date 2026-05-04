@@ -1,37 +1,15 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## 테스트 전략
 
-## Project Overview
-
-Distributed reservation system built with Spring Boot 3.5.14, Java 21, Gradle (Groovy DSL).
-
-**Core stack**: Spring Data JPA + MySQL, Spring Data Redis, Lombok
-
-## Build & Run Commands
-
-```bash
-./gradlew build          # Build project
-./gradlew bootRun        # Run application
-./gradlew test           # Run all tests
-./gradlew test --tests "com.jung.reservation.SomeTest"  # Run single test class
-./gradlew test --tests "com.jung.reservation.SomeTest.methodName"  # Run single test method
-./gradlew clean build    # Clean and rebuild
-```
-
-## Architecture
-
-- **Package**: `com.jung.reservation`
-- **Entry point**: `ReservationApplication.java`
-- Fresh skeleton — no domain layers defined yet. Follow standard layered architecture: controller → service → repository → entity.
+- 기능 추가/수정 시 반드시 검증 테스트를 함께 작성
+- 도메인 엔티티 테스트는 순수 단위 테스트 (JPA, Spring Context 의존 금지)
+- Service 테스트는 `@SpringBootTest` + `@Transactional` 통합 테스트
 
 ## 참조 문서
 
 - `.claude/ai-context/git-convention.md` — Git 커밋 컨벤션
 - `.claude/ai-context/architecture.md` — 헥사고날 아키텍처 + DDD 패키지 구조
-
-## Infrastructure
-
-- **MySQL**: Primary datastore (requires running MySQL instance)
-- **Redis**: For distributed locking / caching (requires running Redis instance)
-- Configure database and Redis connections in `src/main/resources/application.properties`
+- `.claude/ai-context/docs/spec.md` — 시스템 요구사항 및 데이터 모델 정의
+- `.claude/ai-context/docs/plan.md` — Phase별 점진적 개발 계획
+- `.claude/ai-context/docs/tasks.md` — 체크박스 기반 세부 작업 리스트
