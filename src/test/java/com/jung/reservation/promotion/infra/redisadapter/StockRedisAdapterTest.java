@@ -131,7 +131,52 @@ class StockRedisAdapterTest {
         assertThat(stockOutputPort.decreaseStock(5000L, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID, orderId))
                 .isEqualTo(StockResult.SUCCESS);
 
+        // 같은 orderId로 재요청 → ALREADY_PROCESSED
         assertThat(stockOutputPort.decreaseStock(5000L, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID, orderId))
                 .isEqualTo(StockResult.ALREADY_PROCESSED);
+    }
+
+    @Test
+    @DisplayName("completeIdempotency - PROCESSING → COMPLETED 변경 확인")
+    void completeIdempotency_changesState() {
+        redisTemplate.opsForValue().set("stock:promotionRoomType:" + PROMOTION_ROOM_TYPE_ID, "10");
+        redisTemplate.opsForValue().set("sale_start:promotion:" + PROMOTION_ID,
+                String.valueOf(Instant.now().getEpochSecond() - 60));
+
+        String orderId = "ORD-TEST-COMPLETE";
+        stockOutputPort.decreaseStock(6000L, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID, orderId);
+
+        // PROCESSING 상태 확인
+        Object value = redisTemplate.opsForValue().get("idempotency:booking:" + orderId);
+        assertThat(value.toString()).isEqualTo("PROCESSING");
+
+        // complete 호출
+        stockOutputPort.completeIdempotency(orderId);
+
+        // COMPLETED 상태 확인
+        value = redisTemplate.opsForValue().get("idempotency:booking:" + orderId);
+        assertThat(value.toString()).isEqualTo("COMPLETED");
+    }
+
+    @Test
+    @DisplayName("releaseIdempotency - 키 삭제 후 재시도 가능")
+    void releaseIdempotency_allowsRetry() {
+        redisTemplate.opsForValue().set("stock:promotionRoomType:" + PROMOTION_ROOM_TYPE_ID, "10");
+        redisTemplate.opsForValue().set("sale_start:promotion:" + PROMOTION_ID,
+                String.valueOf(Instant.now().getEpochSecond() - 60));
+
+        String orderId = "ORD-TEST-RELEASE";
+        stockOutputPort.decreaseStock(7000L, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID, orderId);
+
+        // 실패 가정 → 키 삭제
+        stockOutputPort.releaseIdempotency(orderId);
+
+        // 키 삭제 확인
+        Object value = redisTemplate.opsForValue().get("idempotency:booking:" + orderId);
+        assertThat(value).isNull();
+
+        // 같은 orderId로 재시도 가능
+        assertThat(stockOutputPort.decreaseStock(7000L, PROMOTION_ID, PROMOTION_ROOM_TYPE_ID, orderId))
+                .isEqualTo(StockResult.SUCCESS);
     }
 }
