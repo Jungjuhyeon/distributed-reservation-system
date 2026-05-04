@@ -27,12 +27,12 @@
 - [x] API 호출 테스트 (상품/포인트/orderId 반환 확인)
 
 ## Phase 3: Redis Lua Script (재고 정합성)
-- [ ] stock.lua 작성 (rate_limit → 시간검증 → 재고차감)
-- [ ] StockService 생성 (Lua Script 로딩 및 실행)
-- [ ] ApplicationRunner로 Redis 프로모션 재고/판매시작시간 초기화
-- [ ] 멀티스레드 동시 요청 테스트 (초과판매 없음 확인)
-- [ ] 오픈 전 요청 차단 테스트
-- [ ] Rate Limit 동작 테스트
+- [x] stock.lua 작성 (rate_limit → 시간검증 → 재고차감)
+- [x] StockService 생성 (StockOutputPort + StockRedisAdapter + StockLuaScript)
+- [x] ~~ApplicationRunner~~ → 테스트에서 직접 Redis 세팅 (프로모션 생성 시 처리 예정)
+- [x] 멀티스레드 동시 요청 테스트 (초과판매 없음 확인)
+- [x] 오픈 전 요청 차단 테스트
+- [x] Rate Limit 동작 테스트
 
 ## Phase 4: 멱등성 처리
 - [ ] idempotency:booking:{orderId} SET NX 구현 (TTL 30초 PROCESSING)

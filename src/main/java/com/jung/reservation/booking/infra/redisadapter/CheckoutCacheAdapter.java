@@ -17,6 +17,6 @@ public class CheckoutCacheAdapter implements CheckoutCacheOutputPort {
     @Override
     public void saveCheckoutCache(String orderId, Long totalAmount) {
         String key = "checkout:" + orderId;
-        redisTemplate.opsForValue().set(key, totalAmount, CHECKOUT_CACHE_TTL_MINUTES, TimeUnit.MINUTES);
+        redisTemplate.opsForValue().set(key, String.valueOf(totalAmount), CHECKOUT_CACHE_TTL_MINUTES, TimeUnit.MINUTES);
     }
 }
