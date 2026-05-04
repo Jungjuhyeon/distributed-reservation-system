@@ -14,15 +14,12 @@
 - [x] Booking 엔티티 생성 (order_id UNIQUE, promotion_room_type_id nullable)
 - [x] Payment 엔티티 생성
 - [x] 각 엔티티별 Repository 생성 (infra/persistence)
-- [ ] CheckoutResponse DTO 생성
-- [ ] BookingRequest DTO 생성
-- [ ] BookingResponse DTO 생성
-- [ ] GlobalExceptionHandler 생성
-- [ ] data.sql 초기 데이터 작성
-- [ ] bootRun 후 테이블 생성 및 데이터 확인
+- [x] GlobalExceptionHandler 생성
+- [x] bootRun 후 테이블 생성 확인
 
 ## Phase 2: Checkout API
 - [ ] RedisConfig 설정 (RedisTemplate, 직렬화)
+- [ ] CheckoutResponse DTO 생성
 - [ ] CheckoutController 생성 (GET /api/checkout/{promotionRoomTypeId})
 - [ ] CheckoutService 생성
 - [ ] orderId 생성 로직 (ORD-yyyyMMdd-UUID)
@@ -45,6 +42,8 @@
 - [ ] 동일 orderId 연속 요청 테스트
 
 ## Phase 5: Booking API 기본 플로우
+- [ ] BookingRequest DTO 생성
+- [ ] BookingResponse DTO 생성
 - [ ] BookingController 생성 (POST /api/booking)
 - [ ] BookingService 생성
 - [ ] 사전 금액 검증 (checkout 캐시 amount vs totalAmount)
