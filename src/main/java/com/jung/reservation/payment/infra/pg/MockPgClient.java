@@ -9,12 +9,12 @@ import org.springframework.stereotype.Component;
 public class MockPgClient implements PgClient {
 
     @Override
-    public void confirm(String paymentKey, String orderId, Long amount) {
-        log.info("[Mock PG] 결제 승인 - paymentKey: {}, orderId: {}, amount: {}", paymentKey, orderId, amount);
+    public void confirm(String pgTransactionId, String orderId, Long amount) {
+        log.info("[Mock PG] 결제 승인 - pgTransactionId: {}, orderId: {}, amount: {}", pgTransactionId, orderId, amount);
     }
 
     @Override
-    public void cancel(String paymentKey, String cancelReason) {
-        log.info("[Mock PG] 결제 취소 - paymentKey: {}, reason: {}", paymentKey, cancelReason);
+    public void cancel(String pgTransactionId, String cancelReason) {
+        log.info("[Mock PG] 결제 취소 - pgTransactionId: {}, reason: {}", pgTransactionId, cancelReason);
     }
 }

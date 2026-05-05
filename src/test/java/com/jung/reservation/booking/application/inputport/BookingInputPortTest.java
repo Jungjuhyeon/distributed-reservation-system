@@ -174,4 +174,61 @@ class BookingInputPortTest {
         assertThatThrownBy(() -> bookingUseCase.book(request))
                 .isInstanceOf(Exception.class);
     }
+
+    @Test
+    @DisplayName("신용카드 + 포인트 복합 결제 성공")
+    void book_creditCardAndPoint_success() {
+        String orderId = "ORD-20260505-TEST-004";
+        redisTemplate.opsForValue().set("checkout:" + orderId, "99000");
+
+        BookingRequest request = new BookingRequest(
+                orderId, savedUser.getId(), savedRoomType.getId(), savedPromotionRoomType.getId(),
+                99000L, LocalDate.of(2026, 5, 10), LocalDate.of(2026, 5, 12), "pg-txn-12345",
+                List.of(
+                        new BookingRequest.PaymentMethodRequest("CREDIT_CARD", 79000L),
+                        new BookingRequest.PaymentMethodRequest("Y_POINT", 20000L)
+                ));
+
+        BookingResponse response = bookingUseCase.book(request);
+
+        assertThat(response.getBookingId()).isNotNull();
+        assertThat(response.getTotalAmount()).isEqualTo(99000L);
+
+        // Payment 2건 확인
+        List<Payment> payments = paymentJpaRepository.findAll();
+        assertThat(payments).hasSize(2);
+
+        // 포인트 차감 확인 (100000 - 20000 = 80000)
+        UserPoint userPoint = userPointJpaRepository.findByUserId(savedUser.getId()).orElseThrow();
+        assertThat(userPoint.getCurrentPoint()).isEqualTo(80000L);
+
+        // PointHistory 확인
+        List<PointHistory> histories = pointHistoryJpaRepository.findAll();
+        assertThat(histories).hasSize(1);
+        assertThat(histories.get(0).getAmount()).isEqualTo(20000L);
+    }
+
+    @Test
+    @DisplayName("복합 결제 부분 실패 - 카드 성공 후 포인트 부족으로 롤백")
+    void book_partialFailure_rollback() {
+        String orderId = "ORD-20260505-TEST-005";
+        redisTemplate.opsForValue().set("checkout:" + orderId, "99000");
+
+        // 카드(79000) 성공 → 포인트(120000) 실패 (잔액 100000) → 카드 cancel 호출
+        BookingRequest request = new BookingRequest(
+                orderId, savedUser.getId(), savedRoomType.getId(), savedPromotionRoomType.getId(),
+                99000L, LocalDate.of(2026, 5, 10), LocalDate.of(2026, 5, 12), "pg-txn-fail",
+                List.of(
+                        new BookingRequest.PaymentMethodRequest("CREDIT_CARD", 79000L),
+                        new BookingRequest.PaymentMethodRequest("Y_POINT", 120000L)
+                ));
+
+        // TODO: 보상 트랜잭션 제대로 구현할 때 예외를 구체적으로 검증 예정
+        assertThatThrownBy(() -> bookingUseCase.book(request))
+                .isInstanceOf(Exception.class);
+
+        // 포인트 차감 안 됨 확인
+        UserPoint userPoint = userPointJpaRepository.findByUserId(savedUser.getId()).orElseThrow();
+        assertThat(userPoint.getCurrentPoint()).isEqualTo(100000L);
+    }
 }
