@@ -18,7 +18,9 @@ public enum CommonErrorCode implements ErrorCode{
     RATE_LIMITED(429, "4290", "요청이 너무 많습니다. 잠시 후 다시 시도해주세요."),
     ALREADY_PROCESSED(409, "4090", "이미 처리된 주문입니다."),
     SOLD_OUT(409, "4091", "재고가 소진되었습니다."),
-    INVALID_PAYMENT_COMBINATION(400, "4001", "주결제 수단은 1개만 선택 가능합니다.");
+    INVALID_PAYMENT_COMBINATION(400, "4001", "주결제 수단은 1개만 선택 가능합니다."),
+    ROOM_NOT_AVAILABLE(409, "4092", "해당 날짜에 예약 가능한 객실이 없습니다."),
+    SERVICE_UNAVAILABLE(503, "5030", "서비스가 일시적으로 불가합니다. 잠시 후 다시 시도해주세요.");
 
     private final Integer httpStatus;
     private final String code;

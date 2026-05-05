@@ -4,6 +4,7 @@ import com.jung.reservation.common.exception.BusinessException;
 import com.jung.reservation.common.exception.errorcode.CommonErrorCode;
 import com.jung.reservation.common.exception.errorcode.ErrorCode;
 import com.jung.reservation.common.exception.response.ErrorResponse;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.coyote.BadRequestException;
 import org.springframework.http.HttpHeaders;
@@ -51,6 +52,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         log.warn("handleIllegalArgument", e);
         final ErrorCode errorCode = CommonErrorCode.INVALID_PARAMETER;
         return handleExceptionInternal(e, errorCode);
+    }
+
+    @ExceptionHandler(CallNotPermittedException.class)
+    public ResponseEntity<Object> handleCircuitBreakerOpen(final CallNotPermittedException e) {
+        log.error("[Circuit Breaker OPEN] Redis 장애 감지 - {}", e.getMessage());
+        final ErrorCode errorCode = CommonErrorCode.SERVICE_UNAVAILABLE;
+        return handleExceptionInternal(errorCode);
     }
 
     @ExceptionHandler({Exception.class})

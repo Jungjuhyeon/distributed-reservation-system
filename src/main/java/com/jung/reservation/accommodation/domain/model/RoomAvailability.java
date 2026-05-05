@@ -1,6 +1,8 @@
 package com.jung.reservation.accommodation.domain.model;
 
 import com.jung.reservation.common.entity.BaseEntity;
+import com.jung.reservation.common.exception.BusinessException;
+import com.jung.reservation.common.exception.errorcode.CommonErrorCode;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -42,5 +44,12 @@ public class RoomAvailability extends BaseEntity {
 
     public static RoomAvailability create(RoomType roomType, LocalDate date, int availableCount, Long amount) {
         return new RoomAvailability(roomType, date, availableCount, amount);
+    }
+
+    public void decreaseCount() {
+        if (this.availableCount <= 0) {
+            throw new BusinessException(CommonErrorCode.ROOM_NOT_AVAILABLE);
+        }
+        this.availableCount--;
     }
 }

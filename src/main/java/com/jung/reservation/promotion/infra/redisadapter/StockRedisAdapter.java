@@ -3,6 +3,7 @@ package com.jung.reservation.promotion.infra.redisadapter;
 import com.jung.reservation.common.util.RedisKeyPrefix;
 import com.jung.reservation.promotion.application.outputport.StockOutputPort;
 import com.jung.reservation.promotion.application.outputport.StockResult;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -23,6 +24,7 @@ public class StockRedisAdapter implements StockOutputPort {
     private static final long IDEMPOTENCY_COMPLETED_TTL_MINUTES = 10;
 
     @Override
+    @CircuitBreaker(name = "redisCircuitBreaker")
     public StockResult decreaseStock(Long userId, Long promotionId, Long promotionRoomTypeId, String orderId) {
         DefaultRedisScript<String> script = new DefaultRedisScript<>(StockLuaScript.DECREASE_STOCK, String.class);
 
@@ -42,17 +44,20 @@ public class StockRedisAdapter implements StockOutputPort {
     }
 
     @Override
+    @CircuitBreaker(name = "redisCircuitBreaker")
     public void completeIdempotency(String orderId) {
         redisTemplate.opsForValue()
                 .set(RedisKeyPrefix.IDEMPOTENCY + orderId, "COMPLETED", IDEMPOTENCY_COMPLETED_TTL_MINUTES, TimeUnit.MINUTES);
     }
 
     @Override
+    @CircuitBreaker(name = "redisCircuitBreaker")
     public void releaseIdempotency(String orderId) {
         redisTemplate.delete(RedisKeyPrefix.IDEMPOTENCY + orderId);
     }
 
     @Override
+    @CircuitBreaker(name = "redisCircuitBreaker")
     public void restoreStock(Long promotionRoomTypeId) {
         redisTemplate.opsForValue().increment(RedisKeyPrefix.STOCK + promotionRoomTypeId);
     }

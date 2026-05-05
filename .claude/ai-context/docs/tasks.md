@@ -63,12 +63,12 @@
 
 ## Phase 6: 장애 대응
 - [x] 결제 실패 시 Redis 재고 복구 (INCR)
-- [ ] 포인트 차감 후 PG 실패 시 포인트 환불
-- [ ] build.gradle에 resilience4j 의존성 추가
-- [ ] Resilience4jConfig 설정
-- [ ] Circuit Breaker 적용 (Redis 장애 감지)
-- [ ] DB 비관적 락 Fallback 구현 (SELECT FOR UPDATE)
-- [ ] Redis 다운 시 Fallback 동작 테스트
+- [x] 포인트 차감 후 PG 실패 시 포인트 환불 (보상 트랜잭션에서 처리됨)
+- [x] build.gradle에 resilience4j 의존성 추가
+- [x] Resilience4jConfig 설정
+- [x] Circuit Breaker 적용 (Redis 장애 감지)
+- [x] DB 비관적 락 Fallback 구현 (room_availability 비관적 락 적용, 프로모션은 Fail-Fast)
+- [x] Redis 다운 시 Fallback 동작 테스트 (Circuit Breaker 강제 OPEN → 503 확인)
 
 ## Phase 7: 테스트 & 검증
 - [ ] 단위 테스트: 각 Service

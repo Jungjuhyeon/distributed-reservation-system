@@ -1,32 +1,34 @@
 package com.jung.reservation.booking.application.inputport;
 
+import com.jung.reservation.accommodation.application.outputport.RoomAvailabilityOutputPort;
 import com.jung.reservation.accommodation.application.outputport.RoomTypeOutputPort;
+import com.jung.reservation.accommodation.domain.model.RoomAvailability;
 import com.jung.reservation.accommodation.domain.model.RoomType;
+import com.jung.reservation.booking.application.outputport.BookingOutputPort;
 import com.jung.reservation.booking.application.outputport.CheckoutCacheOutputPort;
 import com.jung.reservation.booking.application.usecase.BookingUseCase;
 import com.jung.reservation.booking.domain.model.Booking;
 import com.jung.reservation.booking.framework.web.dto.BookingRequest;
 import com.jung.reservation.booking.framework.web.dto.BookingResponse;
-import com.jung.reservation.booking.infra.persistence.BookingJpaRepository;
 import com.jung.reservation.common.exception.BusinessException;
 import com.jung.reservation.common.exception.errorcode.CommonErrorCode;
+import com.jung.reservation.payment.application.outputport.PaymentOutputPort;
 import com.jung.reservation.payment.application.service.PaymentValidator;
 import com.jung.reservation.payment.application.usecase.PaymentProcessor;
 import com.jung.reservation.payment.application.usecase.PaymentProcessorRegistry;
 import com.jung.reservation.payment.domain.model.Payment;
 import com.jung.reservation.payment.domain.model.enumeration.PaymentType;
-import com.jung.reservation.payment.infra.persistence.PaymentJpaRepository;
 import com.jung.reservation.promotion.application.outputport.PromotionRoomTypeOutputPort;
 import com.jung.reservation.promotion.application.outputport.StockOutputPort;
 import com.jung.reservation.promotion.application.outputport.StockResult;
 import com.jung.reservation.promotion.domain.model.PromotionRoomType;
+import com.jung.reservation.user.application.outputport.PointHistoryOutputPort;
 import com.jung.reservation.user.application.outputport.UserOutputPort;
 import com.jung.reservation.user.application.outputport.UserPointOutputPort;
 import com.jung.reservation.user.domain.model.PointHistory;
 import com.jung.reservation.user.domain.model.User;
 import com.jung.reservation.user.domain.model.UserPoint;
 import com.jung.reservation.user.domain.model.enumeration.PointHistoryType;
-import com.jung.reservation.user.infra.persistence.PointHistoryJpaRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -45,12 +47,13 @@ public class BookingInputPort implements BookingUseCase {
     private final RoomTypeOutputPort roomTypeOutputPort;
     private final PromotionRoomTypeOutputPort promotionRoomTypeOutputPort;
     private final UserOutputPort userOutputPort;
-    private final BookingJpaRepository bookingJpaRepository;
-    private final PaymentJpaRepository paymentJpaRepository;
+    private final BookingOutputPort bookingOutputPort;
+    private final PaymentOutputPort paymentOutputPort;
     private final PaymentProcessorRegistry paymentProcessorRegistry;
     private final PaymentValidator paymentValidator;
     private final UserPointOutputPort userPointOutputPort;
-    private final PointHistoryJpaRepository pointHistoryJpaRepository;
+    private final PointHistoryOutputPort pointHistoryOutputPort;
+    private final RoomAvailabilityOutputPort roomAvailabilityOutputPort;
 
     @Override
     @Transactional
@@ -86,7 +89,14 @@ public class BookingInputPort implements BookingUseCase {
             Booking booking = Booking.create(
                     request.getOrderId(), user, roomType, promotionRoomType,
                     request.getCheckInDate(), request.getCheckOutDate(), request.getTotalAmount());
-            bookingJpaRepository.save(booking);
+            bookingOutputPort.save(booking);
+
+            // 3-1. room_availability 재고 차감 (체크인~체크아웃 전날 범위)
+            List<RoomAvailability> availabilities = roomAvailabilityOutputPort
+                    .findByRoomTypeIdAndDateRange(request.getRoomTypeId(), request.getCheckInDate(), request.getCheckOutDate().minusDays(1));
+            for (RoomAvailability availability : availabilities) {
+                availability.decreaseCount();
+            }
 
             // 4. 결제 실행 (부분 실패 시 보상 트랜잭션)
             List<BookingRequest.PaymentMethodRequest> successfulPayments = new java.util.ArrayList<>();
@@ -123,12 +133,12 @@ public class BookingInputPort implements BookingUseCase {
                 if (request.getPgTransactionId() != null) {
                     payment.success(request.getPgTransactionId());
                 }
-                paymentJpaRepository.save(payment);
+                paymentOutputPort.save(payment);
 
                 // 포인트 사용 시 이력 저장
                 if (paymentType == PaymentType.Y_POINT) {
                     UserPoint userPoint = userPointOutputPort.findByUserId(request.getUserId()).orElseThrow();
-                    pointHistoryJpaRepository.save(
+                    pointHistoryOutputPort.save(
                             PointHistory.create(userPoint, method.getAmount(), booking, PointHistoryType.USE, "프로모션 예약 포인트 사용"));
                 }
             }
@@ -139,11 +149,7 @@ public class BookingInputPort implements BookingUseCase {
             // 7. 멱등성 키 COMPLETED로 변경
             stockOutputPort.completeIdempotency(request.getOrderId());
 
-            return BookingResponse.builder()
-                    .bookingId(booking.getId())
-                    .orderId(booking.getOrderId())
-                    .totalAmount(booking.getTotalAmount())
-                    .build();
+            return BookingResponse.mapToDTO(booking);
 
         } catch (Exception e) {
             stockOutputPort.restoreStock(request.getPromotionRoomTypeId());
