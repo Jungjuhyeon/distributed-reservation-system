@@ -20,4 +20,10 @@ public class CheckoutCacheAdapter implements CheckoutCacheOutputPort {
         String key = RedisKeyPrefix.CHECKOUT + orderId;
         redisTemplate.opsForValue().set(key, String.valueOf(totalAmount), CHECKOUT_CACHE_TTL_MINUTES, TimeUnit.MINUTES);
     }
+
+    @Override
+    public Long getCheckoutAmount(String orderId) {
+        Object value = redisTemplate.opsForValue().get(RedisKeyPrefix.CHECKOUT + orderId);
+        return value != null ? Long.parseLong(value.toString()) : null;
+    }
 }

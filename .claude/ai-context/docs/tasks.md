@@ -38,13 +38,13 @@
 - [x] 멱등성 테스트 (동일 orderId 중복 요청 차단)
 
 ## Phase 4: Booking API 기본 플로우
-- [ ] BookingRequest DTO 생성
-- [ ] BookingResponse DTO 생성
-- [ ] BookingController 생성 (POST /api/booking)
-- [ ] BookingService 생성
-- [ ] 사전 금액 검증 (checkout 캐시 amount vs totalAmount)
-- [ ] Lua Script 실행 통합 (Phase 3)
-- [ ] PaymentProcessor 인터페이스 정의 (pay, cancel)
+- [x] BookingRequest DTO 생성
+- [x] BookingResponse DTO 생성
+- [x] BookingController 생성 (POST /api/booking)
+- [x] BookingService 생성 (BookingInputPort)
+- [x] 사전 금액 검증 (checkout 캐시 amount vs totalAmount)
+- [x] Lua Script 실행 통합 (Phase 3)
+- [x] PaymentProcessor 인터페이스 정의 (pay, cancel)
 - [ ] YPointPaymentProcessor 구현 (포인트 차감)
 - [ ] PaymentProcessorRegistry 구현
 - [ ] Booking + Payment DB 저장
