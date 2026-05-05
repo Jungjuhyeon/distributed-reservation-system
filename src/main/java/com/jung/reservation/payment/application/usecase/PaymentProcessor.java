@@ -6,7 +6,7 @@ public interface PaymentProcessor {
 
     PaymentType getType();
 
-    void pay(Long userId, Long amount, String orderId, String paymentKey);
+    void pay(Long userId, Long amount, String orderId, String pgTransactionId);
 
-    void cancel(Long userId, Long amount, String orderId, String paymentKey);
+    void cancel(Long userId, Long amount, String orderId, String pgTransactionId);
 }

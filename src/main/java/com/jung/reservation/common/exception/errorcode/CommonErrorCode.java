@@ -17,7 +17,8 @@ public enum CommonErrorCode implements ErrorCode{
     PROMOTION_NOT_STARTED(403, "4030", "프로모션이 아직 시작되지 않았습니다."),
     RATE_LIMITED(429, "4290", "요청이 너무 많습니다. 잠시 후 다시 시도해주세요."),
     ALREADY_PROCESSED(409, "4090", "이미 처리된 주문입니다."),
-    SOLD_OUT(409, "4091", "재고가 소진되었습니다.");
+    SOLD_OUT(409, "4091", "재고가 소진되었습니다."),
+    INVALID_PAYMENT_COMBINATION(400, "4001", "주결제 수단은 1개만 선택 가능합니다.");
 
     private final Integer httpStatus;
     private final String code;

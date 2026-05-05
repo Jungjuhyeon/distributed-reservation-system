@@ -23,7 +23,7 @@ public class YPointPaymentProcessor implements PaymentProcessor {
 
     @Override
     @Transactional
-    public void pay(Long userId, Long amount, String orderId, String paymentKey) {
+    public void pay(Long userId, Long amount, String orderId, String pgTransactionId) {
         UserPoint userPoint = userPointOutputPort.findByUserId(userId)
                 .orElseThrow(() -> new BusinessException(CommonErrorCode.USER_POINT_NOT_FOUND));
         userPoint.deduct(amount);
@@ -31,7 +31,7 @@ public class YPointPaymentProcessor implements PaymentProcessor {
 
     @Override
     @Transactional
-    public void cancel(Long userId, Long amount, String orderId, String paymentKey) {
+    public void cancel(Long userId, Long amount, String orderId, String pgTransactionId) {
         UserPoint userPoint = userPointOutputPort.findByUserId(userId)
                 .orElseThrow(() -> new BusinessException(CommonErrorCode.USER_POINT_NOT_FOUND));
         userPoint.refund(amount);

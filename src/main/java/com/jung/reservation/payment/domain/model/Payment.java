@@ -34,7 +34,7 @@ public class Payment extends BaseEntity {
     @Column(nullable = false)
     private PaymentStatus status;
 
-    private String pgPaymentKey; // PG 결제키 (외부 결제 시)
+    private String pgTransactionId; // PG사 거래 식별자 (외부 결제 시)
 
     private Payment(Booking booking, PaymentType paymentType, Long amount, PaymentStatus status) {
         this.booking = booking;
@@ -47,9 +47,9 @@ public class Payment extends BaseEntity {
         return new Payment(booking, paymentType, amount, PaymentStatus.SUCCESS);
     }
 
-    public void success(String pgPaymentKey) {
+    public void success(String pgTransactionId) {
         this.status = PaymentStatus.SUCCESS;
-        this.pgPaymentKey = pgPaymentKey;
+        this.pgTransactionId = pgTransactionId;
     }
 
     public void fail() {

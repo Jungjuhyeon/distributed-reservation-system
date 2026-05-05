@@ -51,13 +51,13 @@
 - [x] 포인트 단건 결제 E2E 테스트
 
 ## Phase 5: 결제 확장 (복합 결제 + PG Mock)
-- [ ] PgClient 인터페이스 정의
-- [ ] PgClient Mock 구현체 작성
-- [ ] CreditCardPaymentProcessor 구현
-- [ ] YPayPaymentProcessor 구현
-- [ ] 복합 결제 validation (신용카드 + Y페이 혼용 불가)
-- [ ] paymentMethods 배열 순회 결제 처리
-- [ ] 부분 실패 시 보상 트랜잭션 (역순 cancel)
+- [x] PgClient 인터페이스 정의
+- [x] PgClient Mock 구현체 작성
+- [x] CreditCardPaymentProcessor 구현
+- [x] YPayPaymentProcessor 구현
+- [x] 복합 결제 validation (주결제 수단 1개만 + Y포인트 조합만 허용)
+- [x] paymentMethods 배열 순회 결제 처리
+- [x] 부분 실패 시 보상 트랜잭션 (역순 cancel)
 - [ ] 신용카드+포인트 복합 결제 테스트
 - [ ] 부분 실패 롤백 테스트
 

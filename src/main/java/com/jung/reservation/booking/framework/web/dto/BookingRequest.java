@@ -19,7 +19,7 @@ public class BookingRequest {
     private Long totalAmount;
     private LocalDate checkInDate;
     private LocalDate checkOutDate;
-    private String paymentKey; // PG 결제 시에만 (포인트 전액이면 null)
+    private String pgTransactionId; // PG 결제 시에만 (포인트 전액이면 null)
     private List<PaymentMethodRequest> paymentMethods;
 
     @Getter
