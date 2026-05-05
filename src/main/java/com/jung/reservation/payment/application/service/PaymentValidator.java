@@ -1,25 +1,27 @@
 package com.jung.reservation.payment.application.service;
 
+import com.jung.reservation.accommodation.application.outputport.RoomTypeOutputPort;
 import com.jung.reservation.booking.application.outputport.CheckoutCacheOutputPort;
 import com.jung.reservation.booking.framework.web.dto.BookingRequest;
 import com.jung.reservation.common.exception.BusinessException;
 import com.jung.reservation.common.exception.errorcode.CommonErrorCode;
 import com.jung.reservation.payment.domain.model.enumeration.PaymentType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class PaymentValidator {
 
     private final CheckoutCacheOutputPort checkoutCacheOutputPort;
+    private final RoomTypeOutputPort roomTypeOutputPort;
 
     /**
      * 복합 결제 조합 검증
-     * - 주결제 수단(Y_POINT 제외)은 1개만 허용
-     * - Y포인트 단독 또는 주결제 + Y포인트 조합만 가능
      */
     public void validatePaymentCombination(List<BookingRequest.PaymentMethodRequest> methods) {
         long primaryCount = methods.stream()
@@ -33,11 +35,25 @@ public class PaymentValidator {
 
     /**
      * 결제 금액 위변조 검증
-     * - checkout 캐시의 금액과 요청 금액이 일치하는지 비교
+     * - Redis checkout 캐시 우선 조회
+     * - Redis 장애(null 반환) 시 DB에서 원본 가격 조회 (Fallback)
      */
-    public void validateAmount(String orderId, Long totalAmount) {
+    public void validateAmount(String orderId, Long totalAmount, Long roomTypeId) {
         Long cachedAmount = checkoutCacheOutputPort.getCheckoutAmount(orderId);
-        if (cachedAmount == null || !cachedAmount.equals(totalAmount)) {
+
+        if (cachedAmount != null) {
+            if (!cachedAmount.equals(totalAmount)) {
+                throw new BusinessException(CommonErrorCode.INVALID_PARAMETER);
+            }
+            return;
+        }
+
+        // Redis 장애 Fallback: DB에서 원본 가격 비교
+        log.warn("[Redis Fallback] DB에서 금액 검증 - orderId: {}", orderId);
+        Long dbAmount = roomTypeOutputPort.findById(roomTypeId)
+                .orElseThrow(() -> new BusinessException(CommonErrorCode.ROOM_TYPE_NOT_FOUND))
+                .getAmount();
+        if (!dbAmount.equals(totalAmount)) {
             throw new BusinessException(CommonErrorCode.INVALID_PARAMETER);
         }
     }

@@ -48,15 +48,15 @@ public class BookingInputPort implements BookingUseCase {
         // 0. 복합 결제 validation
         paymentValidator.validatePaymentCombination(request.getPaymentMethods());
 
-        // 1. 사전 금액 검증
-        paymentValidator.validateAmount(request.getOrderId(), request.getTotalAmount());
-
-        // 2. 프로모션 / 일반 분기
+        // 1. 프로모션 / 일반 분기
         return request.getPromotionRoomTypeId() != null ? bookPromotion(request) : bookNormal(request);
     }
 
     private BookingResponse bookPromotion(BookingRequest request) {
-        // 2-1. Lua Script (시간검증 → Rate Limit → 멱등성 → Redis 재고차감)
+        // 2-1. 금액 검증 (Redis 캐시 우선, 실패 시 DB Fallback)
+        paymentValidator.validateAmount(request.getOrderId(), request.getTotalAmount(), request.getRoomTypeId());
+
+        // 2-2. Lua Script (시간검증 → Rate Limit → 멱등성 → Redis 재고차감)
         promotionStockService.reserveByLuaScript(request.getUserId(), request.getPromotionRoomTypeId(), request.getOrderId());
 
         try {
@@ -107,15 +107,18 @@ public class BookingInputPort implements BookingUseCase {
     }
 
     private BookingResponse bookNormal(BookingRequest request) {
-        // 2-1. Rate Limit 체크
+        // 2-1. Rate Limit 체크 (Redis 장애 시 스킵)
         if (!rateLimitOutputPort.isAllowed(request.getUserId())) {
             throw new BusinessException(CommonErrorCode.RATE_LIMITED);
         }
 
-        // 2-2. 멱등성 체크 (SET NX, TTL 3초)
+        // 2-2. 멱등성 체크 (Redis 장애 시 스킵, DB UNIQUE로 방어)
         if (idempotencyOutputPort.isDuplicate(request.getOrderId())) {
             throw new BusinessException(CommonErrorCode.DUPLICATE_REQUEST);
         }
+
+        // 2-3. 금액 검증 (Redis 캐시 우선, 실패 시 DB Fallback)
+        paymentValidator.validateAmount(request.getOrderId(), request.getTotalAmount(), request.getRoomTypeId());
 
         try {
             // 3. Booking 저장 (PENDING)
