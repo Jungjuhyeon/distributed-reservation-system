@@ -1,39 +1,28 @@
 package com.jung.reservation.booking.application.inputport;
 
-import com.jung.reservation.accommodation.application.outputport.RoomAvailabilityOutputPort;
 import com.jung.reservation.accommodation.application.outputport.RoomTypeOutputPort;
-import com.jung.reservation.accommodation.domain.model.RoomAvailability;
+import com.jung.reservation.accommodation.application.service.RoomAvailabilityService;
 import com.jung.reservation.accommodation.domain.model.RoomType;
 import com.jung.reservation.booking.application.outputport.BookingOutputPort;
-import com.jung.reservation.booking.application.outputport.CheckoutCacheOutputPort;
+import com.jung.reservation.booking.application.outputport.IdempotencyOutputPort;
+import com.jung.reservation.booking.application.outputport.RateLimitOutputPort;
 import com.jung.reservation.booking.application.usecase.BookingUseCase;
 import com.jung.reservation.booking.domain.model.Booking;
 import com.jung.reservation.booking.framework.web.dto.BookingRequest;
 import com.jung.reservation.booking.framework.web.dto.BookingResponse;
 import com.jung.reservation.common.exception.BusinessException;
 import com.jung.reservation.common.exception.errorcode.CommonErrorCode;
-import com.jung.reservation.payment.application.outputport.PaymentOutputPort;
+import com.jung.reservation.payment.application.exception.PgErrorCategory;
+import com.jung.reservation.payment.application.exception.PgPaymentException;
+import com.jung.reservation.payment.application.service.PaymentExecutionService;
 import com.jung.reservation.payment.application.service.PaymentValidator;
-import com.jung.reservation.payment.application.usecase.PaymentProcessor;
-import com.jung.reservation.payment.application.usecase.PaymentProcessorRegistry;
-import com.jung.reservation.payment.domain.model.Payment;
-import com.jung.reservation.payment.domain.model.enumeration.PaymentType;
 import com.jung.reservation.promotion.application.outputport.PromotionRoomTypeOutputPort;
-import com.jung.reservation.promotion.application.outputport.StockOutputPort;
-import com.jung.reservation.promotion.application.outputport.StockResult;
+import com.jung.reservation.promotion.application.service.PromotionStockService;
 import com.jung.reservation.promotion.domain.model.PromotionRoomType;
-import com.jung.reservation.user.application.outputport.PointHistoryOutputPort;
 import com.jung.reservation.user.application.outputport.UserOutputPort;
-import com.jung.reservation.user.application.outputport.UserPointOutputPort;
-import com.jung.reservation.user.domain.model.PointHistory;
 import com.jung.reservation.user.domain.model.User;
-import com.jung.reservation.user.domain.model.UserPoint;
-import com.jung.reservation.user.domain.model.enumeration.PointHistoryType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-
-import java.util.ArrayList;
-import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,135 +31,145 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class BookingInputPort implements BookingUseCase {
 
-    private final CheckoutCacheOutputPort checkoutCacheOutputPort;
-    private final StockOutputPort stockOutputPort;
+    private final PromotionStockService promotionStockService;
+    private final RoomAvailabilityService roomAvailabilityService;
+    private final PaymentExecutionService paymentExecutionService;
+    private final PaymentValidator paymentValidator;
+    private final RateLimitOutputPort rateLimitOutputPort;
+    private final IdempotencyOutputPort idempotencyOutputPort;
     private final RoomTypeOutputPort roomTypeOutputPort;
     private final PromotionRoomTypeOutputPort promotionRoomTypeOutputPort;
     private final UserOutputPort userOutputPort;
     private final BookingOutputPort bookingOutputPort;
-    private final PaymentOutputPort paymentOutputPort;
-    private final PaymentProcessorRegistry paymentProcessorRegistry;
-    private final PaymentValidator paymentValidator;
-    private final UserPointOutputPort userPointOutputPort;
-    private final PointHistoryOutputPort pointHistoryOutputPort;
-    private final RoomAvailabilityOutputPort roomAvailabilityOutputPort;
 
     @Override
     @Transactional
     public BookingResponse book(BookingRequest request) {
-        // 0. 복합 결제 validation (주결제 수단은 1개만, Y포인트와만 조합 가능)
-        paymentValidator.validate(request.getPaymentMethods());
+        // 0. 복합 결제 validation
+        paymentValidator.validatePaymentCombination(request.getPaymentMethods());
 
-        // 1. 사전 금액 검증 (checkout 캐시 vs 요청 금액)
-        Long cachedAmount = checkoutCacheOutputPort.getCheckoutAmount(request.getOrderId());
-        if (cachedAmount == null || !cachedAmount.equals(request.getTotalAmount())) {
-            throw new BusinessException(CommonErrorCode.INVALID_PARAMETER);
-        }
+        // 1. 사전 금액 검증
+        paymentValidator.validateAmount(request.getOrderId(), request.getTotalAmount());
 
-        // 2. Lua Script 실행 (시간검증 → Rate Limit → 멱등성 → 재고차감)
-        PromotionRoomType promotionRoomType = promotionRoomTypeOutputPort.findById(request.getPromotionRoomTypeId())
-                .orElseThrow(() -> new BusinessException(CommonErrorCode.PROMOTION_ROOM_TYPE_NOT_FOUND));
+        // 2. 프로모션 / 일반 분기
+        return request.getPromotionRoomTypeId() != null ? bookPromotion(request) : bookNormal(request);
+    }
 
-        StockResult stockResult = stockOutputPort.decreaseStock(
-                request.getUserId(),
-                promotionRoomType.getPromotion().getId(),
-                request.getPromotionRoomTypeId(),
-                request.getOrderId());
-
-        handleStockResult(stockResult);
+    private BookingResponse bookPromotion(BookingRequest request) {
+        // 2-1. Lua Script (시간검증 → Rate Limit → 멱등성 → Redis 재고차감)
+        promotionStockService.reserveByLuaScript(request.getUserId(), request.getPromotionRoomTypeId(), request.getOrderId());
 
         try {
             // 3. Booking 저장 (PENDING)
-            RoomType roomType = roomTypeOutputPort.findById(request.getRoomTypeId())
-                    .orElseThrow(() -> new BusinessException(CommonErrorCode.ROOM_TYPE_NOT_FOUND));
-            User user = userOutputPort.findById(request.getUserId())
-                    .orElseThrow(() -> new BusinessException(CommonErrorCode.USER_NOT_FOUND));
+            Booking booking = createAndSaveBooking(request);
 
-            Booking booking = Booking.create(
-                    request.getOrderId(), user, roomType, promotionRoomType,
-                    request.getCheckInDate(), request.getCheckOutDate(), request.getTotalAmount());
-            bookingOutputPort.save(booking);
+            // 3-1. promotion stock DB 차감 (비관적 락)
+            promotionStockService.decreaseDbStock(request.getPromotionRoomTypeId());
 
-            // 3-1. promotion_room_type.stock DB 차감 (비관적 락 + Redis 동기화)
-            PromotionRoomType lockedPromotionRoomType = promotionRoomTypeOutputPort
-                    .findWithLockById(request.getPromotionRoomTypeId())
-                    .orElseThrow(() -> new BusinessException(CommonErrorCode.PROMOTION_ROOM_TYPE_NOT_FOUND));
-            lockedPromotionRoomType.decreaseStock();
+            // 3-2. room_availability 차감 (비관적 락)
+            roomAvailabilityService.decrease(request.getRoomTypeId(), request.getCheckInDate(), request.getCheckOutDate());
 
-            // 3-2. room_availability 재고 차감 (체크인~체크아웃 전날 범위, 비관적 락)
-            List<RoomAvailability> availabilities = roomAvailabilityOutputPort
-                    .findByRoomTypeIdAndDateRange(request.getRoomTypeId(), request.getCheckInDate(), request.getCheckOutDate().minusDays(1));
-            for (RoomAvailability availability : availabilities) {
-                availability.decreaseCount();
-            }
+            // 4. 결제 실행
+            paymentExecutionService.execute(request);
 
-            // 4. 결제 실행 (부분 실패 시 보상 트랜잭션)
-            List<BookingRequest.PaymentMethodRequest> successfulPayments = new java.util.ArrayList<>();
-            try {
-                for (BookingRequest.PaymentMethodRequest method : request.getPaymentMethods()) {
-                    PaymentType paymentType = PaymentType.valueOf(method.getType());
-                    PaymentProcessor processor = paymentProcessorRegistry.getProcessor(paymentType);
-                    processor.pay(request.getUserId(), method.getAmount(), request.getOrderId(), request.getPgTransactionId());
-                    successfulPayments.add(method);
-                }
-            } catch (Exception paymentException) {
-                // 이미 성공한 결제를 역순으로 취소 (개별 try-catch로 끝까지 시도)
-                for (int i = successfulPayments.size() - 1; i >= 0; i--) {
-                    try {
-                        BookingRequest.PaymentMethodRequest paid = successfulPayments.get(i);
-                        PaymentType paymentType = PaymentType.valueOf(paid.getType());
-                        PaymentProcessor processor = paymentProcessorRegistry.getProcessor(paymentType);
-                        processor.cancel(request.getUserId(), paid.getAmount(), request.getOrderId(), request.getPgTransactionId());
-                    } catch (Exception cancelException) {
-                        // TODO: Phase 6에서 취소 실패 건 DB 저장 + 재처리 구현
-                        log.error("[결제 취소 실패] orderId={}, type={}, amount={}",
-                                request.getOrderId(), successfulPayments.get(i).getType(),
-                                successfulPayments.get(i).getAmount(), cancelException);
-                    }
-                }
-                throw paymentException;
-            }
-
-            // 5. Payment 저장 + PointHistory 생성
-            for (BookingRequest.PaymentMethodRequest method : request.getPaymentMethods()) {
-                PaymentType paymentType = PaymentType.valueOf(method.getType());
-
-                Payment payment = Payment.create(booking, paymentType, method.getAmount());
-                if (request.getPgTransactionId() != null) {
-                    payment.success(request.getPgTransactionId());
-                }
-                paymentOutputPort.save(payment);
-
-                // 포인트 사용 시 이력 저장
-                if (paymentType == PaymentType.Y_POINT) {
-                    UserPoint userPoint = userPointOutputPort.findByUserId(request.getUserId()).orElseThrow();
-                    pointHistoryOutputPort.save(
-                            PointHistory.create(userPoint, method.getAmount(), booking, PointHistoryType.USE, "프로모션 예약 포인트 사용"));
-                }
-            }
+            // 5. Payment/PointHistory 저장
+            paymentExecutionService.savePaymentsAndPointHistory(request, booking);
 
             // 6. Booking → COMPLETED
             booking.complete();
 
-            // 7. 멱등성 키 COMPLETED로 변경
-            stockOutputPort.completeIdempotency(request.getOrderId());
+            // 7. 멱등성 키 COMPLETED
+            promotionStockService.completeIdempotency(request.getOrderId());
 
             return BookingResponse.mapToDTO(booking);
 
-        } catch (Exception e) {
-            stockOutputPort.restoreStock(request.getPromotionRoomTypeId());
-            stockOutputPort.releaseIdempotency(request.getOrderId());
+        } catch (BusinessException e) {
+            log.warn("[결제 비즈니스 실패] 재고 즉시 복구 - orderId: {}, code: {}", request.getOrderId(), e.getErrorCode());
+            promotionStockService.rollbackRedisResources(request.getPromotionRoomTypeId(), request.getOrderId());
             throw e;
+        } catch (PgPaymentException e) {
+            if (e.getCategory() == PgErrorCategory.RETRYABLE) {
+                log.warn("[PG 결제 거절] 재고 복구 - orderId: {}, pgCode: {}", request.getOrderId(), e.getPgErrorCode());
+                promotionStockService.rollbackRedisResources(request.getPromotionRoomTypeId(), request.getOrderId());
+                throw new BusinessException(CommonErrorCode.PAYMENT_REJECTED);
+            } else if (e.getCategory() == PgErrorCategory.TEMPORARY) {
+                log.warn("[PG 일시 오류] 재고 복구 - orderId: {}, pgCode: {}", request.getOrderId(), e.getPgErrorCode());
+                promotionStockService.rollbackRedisResources(request.getPromotionRoomTypeId(), request.getOrderId());
+                throw new BusinessException(CommonErrorCode.PAYMENT_TEMPORARY_ERROR);
+            } else {
+                log.error("[PG 시스템 오류] 재고 잠금 유지 - orderId: {}, pgCode: {}", request.getOrderId(), e.getPgErrorCode());
+                throw new BusinessException(CommonErrorCode.PAYMENT_SYSTEM_ERROR);
+            }
+        } catch (Exception e) {
+            log.error("[시스템 장애] 결제 결과 불분명 - 재고 잠금 유지 - orderId: {}", request.getOrderId(), e);
+            throw new BusinessException(CommonErrorCode.PAYMENT_SYSTEM_ERROR);
         }
     }
 
-    private void handleStockResult(StockResult result) {
-        switch (result) {
-            case SUCCESS -> {}
-            case NOT_STARTED -> throw new BusinessException(CommonErrorCode.PROMOTION_NOT_STARTED);
-            case RATE_LIMITED -> throw new BusinessException(CommonErrorCode.RATE_LIMITED);
-            case ALREADY_PROCESSED -> throw new BusinessException(CommonErrorCode.ALREADY_PROCESSED);
-            case SOLD_OUT -> throw new BusinessException(CommonErrorCode.SOLD_OUT);
+    private BookingResponse bookNormal(BookingRequest request) {
+        // 2-1. Rate Limit 체크
+        if (!rateLimitOutputPort.isAllowed(request.getUserId())) {
+            throw new BusinessException(CommonErrorCode.RATE_LIMITED);
         }
+
+        // 2-2. 멱등성 체크 (SET NX, TTL 3초)
+        if (idempotencyOutputPort.isDuplicate(request.getOrderId())) {
+            throw new BusinessException(CommonErrorCode.DUPLICATE_REQUEST);
+        }
+
+        try {
+            // 3. Booking 저장 (PENDING)
+            Booking booking = createAndSaveBooking(request);
+
+            // 3-1. room_availability 차감 (비관적 락)
+            roomAvailabilityService.decrease(request.getRoomTypeId(), request.getCheckInDate(), request.getCheckOutDate());
+
+            // 4. 결제 실행
+            paymentExecutionService.execute(request);
+
+            // 5. Payment/PointHistory 저장
+            paymentExecutionService.savePaymentsAndPointHistory(request, booking);
+
+            // 6. Booking → COMPLETED
+            booking.complete();
+
+            return BookingResponse.mapToDTO(booking);
+
+        } catch (BusinessException e) {
+            log.warn("[일반 예약 실패] orderId: {}, code: {}", request.getOrderId(), e.getErrorCode());
+            throw e;
+        } catch (PgPaymentException e) {
+            if (e.getCategory() == PgErrorCategory.RETRYABLE) {
+                log.warn("[일반 예약 PG 거절] orderId: {}, pgCode: {}", request.getOrderId(), e.getPgErrorCode());
+                throw new BusinessException(CommonErrorCode.PAYMENT_REJECTED);
+            } else if (e.getCategory() == PgErrorCategory.TEMPORARY) {
+                log.warn("[일반 예약 PG 일시 오류] orderId: {}, pgCode: {}", request.getOrderId(), e.getPgErrorCode());
+                throw new BusinessException(CommonErrorCode.PAYMENT_TEMPORARY_ERROR);
+            } else {
+                log.error("[일반 예약 PG 시스템 오류] orderId: {}, pgCode: {}", request.getOrderId(), e.getPgErrorCode());
+                throw new BusinessException(CommonErrorCode.PAYMENT_SYSTEM_ERROR);
+            }
+        } catch (Exception e) {
+            log.error("[일반 예약 시스템 장애] orderId: {}", request.getOrderId(), e);
+            throw new BusinessException(CommonErrorCode.PAYMENT_SYSTEM_ERROR);
+        }
+    }
+
+    private Booking createAndSaveBooking(BookingRequest request) {
+        RoomType roomType = roomTypeOutputPort.findById(request.getRoomTypeId())
+                .orElseThrow(() -> new BusinessException(CommonErrorCode.ROOM_TYPE_NOT_FOUND));
+        User user = userOutputPort.findById(request.getUserId())
+                .orElseThrow(() -> new BusinessException(CommonErrorCode.USER_NOT_FOUND));
+
+        PromotionRoomType promotionRoomType = request.getPromotionRoomTypeId() != null
+                ? promotionRoomTypeOutputPort.findById(request.getPromotionRoomTypeId())
+                        .orElseThrow(() -> new BusinessException(CommonErrorCode.PROMOTION_ROOM_TYPE_NOT_FOUND))
+                : null;
+
+        Booking booking = Booking.create(
+                request.getOrderId(), user, roomType, promotionRoomType,
+                request.getCheckInDate(), request.getCheckOutDate(), request.getTotalAmount());
+        bookingOutputPort.save(booking);
+        return booking;
     }
 }

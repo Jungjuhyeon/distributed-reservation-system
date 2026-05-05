@@ -26,6 +26,9 @@ public class YPointPaymentProcessor implements PaymentProcessor {
     public void pay(Long userId, Long amount, String orderId, String pgTransactionId) {
         UserPoint userPoint = userPointOutputPort.findByUserId(userId)
                 .orElseThrow(() -> new BusinessException(CommonErrorCode.USER_POINT_NOT_FOUND));
+        if (!userPoint.canDeduct(amount)) {
+            throw new BusinessException(CommonErrorCode.INSUFFICIENT_POINT);
+        }
         userPoint.deduct(amount);
     }
 

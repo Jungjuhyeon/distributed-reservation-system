@@ -54,6 +54,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return handleExceptionInternal(e, errorCode);
     }
 
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<Object> handleDuplicateOrder(final org.springframework.dao.DataIntegrityViolationException e) {
+        log.warn("[DB 중복 방지] orderId UNIQUE 제약 위반 - {}", e.getMessage());
+        final ErrorCode errorCode = CommonErrorCode.DUPLICATE_REQUEST;
+        return handleExceptionInternal(errorCode);
+    }
+
     @ExceptionHandler(CallNotPermittedException.class)
     public ResponseEntity<Object> handleCircuitBreakerOpen(final CallNotPermittedException e) {
         log.error("[Circuit Breaker OPEN] Redis 장애 감지 - {}", e.getMessage());

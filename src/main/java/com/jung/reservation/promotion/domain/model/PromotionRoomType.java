@@ -2,8 +2,6 @@ package com.jung.reservation.promotion.domain.model;
 
 import com.jung.reservation.accommodation.domain.model.RoomType;
 import com.jung.reservation.common.entity.BaseEntity;
-import com.jung.reservation.common.exception.BusinessException;
-import com.jung.reservation.common.exception.errorcode.CommonErrorCode;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -44,10 +42,11 @@ public class PromotionRoomType extends BaseEntity {
         return new PromotionRoomType(promotion, roomType, promotionAmount, stock);
     }
 
+    public boolean canDecreaseStock() {
+        return this.stock > 0;
+    }
+
     public void decreaseStock() {
-        if (this.stock <= 0) {
-            throw new BusinessException(CommonErrorCode.SOLD_OUT);
-        }
         this.stock--;
     }
 }

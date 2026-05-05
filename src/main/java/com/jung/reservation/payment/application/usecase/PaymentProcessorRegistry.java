@@ -1,5 +1,7 @@
 package com.jung.reservation.payment.application.usecase;
 
+import com.jung.reservation.common.exception.BusinessException;
+import com.jung.reservation.common.exception.errorcode.CommonErrorCode;
 import com.jung.reservation.payment.domain.model.enumeration.PaymentType;
 import org.springframework.stereotype.Component;
 
@@ -21,7 +23,7 @@ public class PaymentProcessorRegistry {
     public PaymentProcessor getProcessor(PaymentType type) {
         PaymentProcessor processor = processors.get(type);
         if (processor == null) {
-            throw new IllegalArgumentException("지원하지 않는 결제 수단입니다: " + type);
+            throw new BusinessException(CommonErrorCode.UNSUPPORTED_PAYMENT_TYPE);
         }
         return processor;
     }
