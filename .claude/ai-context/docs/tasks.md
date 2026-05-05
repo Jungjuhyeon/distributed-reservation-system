@@ -45,10 +45,10 @@
 - [x] 사전 금액 검증 (checkout 캐시 amount vs totalAmount)
 - [x] Lua Script 실행 통합 (Phase 3)
 - [x] PaymentProcessor 인터페이스 정의 (pay, cancel)
-- [ ] YPointPaymentProcessor 구현 (포인트 차감)
-- [ ] PaymentProcessorRegistry 구현
-- [ ] Booking + Payment DB 저장
-- [ ] 포인트 단건 결제 E2E 테스트
+- [x] YPointPaymentProcessor 구현 (포인트 차감)
+- [x] PaymentProcessorRegistry 구현
+- [x] Booking + Payment DB 저장
+- [x] 포인트 단건 결제 E2E 테스트
 
 ## Phase 5: 결제 확장 (복합 결제 + PG Mock)
 - [ ] PgClient 인터페이스 정의

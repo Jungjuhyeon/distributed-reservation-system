@@ -10,12 +10,22 @@ import com.jung.reservation.booking.framework.web.dto.BookingResponse;
 import com.jung.reservation.booking.infra.persistence.BookingJpaRepository;
 import com.jung.reservation.common.exception.BusinessException;
 import com.jung.reservation.common.exception.errorcode.CommonErrorCode;
+import com.jung.reservation.payment.application.usecase.PaymentProcessor;
+import com.jung.reservation.payment.application.usecase.PaymentProcessorRegistry;
+import com.jung.reservation.payment.domain.model.Payment;
+import com.jung.reservation.payment.domain.model.enumeration.PaymentType;
+import com.jung.reservation.payment.infra.persistence.PaymentJpaRepository;
 import com.jung.reservation.promotion.application.outputport.PromotionRoomTypeOutputPort;
 import com.jung.reservation.promotion.application.outputport.StockOutputPort;
 import com.jung.reservation.promotion.application.outputport.StockResult;
 import com.jung.reservation.promotion.domain.model.PromotionRoomType;
 import com.jung.reservation.user.application.outputport.UserOutputPort;
+import com.jung.reservation.user.application.outputport.UserPointOutputPort;
+import com.jung.reservation.user.domain.model.PointHistory;
 import com.jung.reservation.user.domain.model.User;
+import com.jung.reservation.user.domain.model.UserPoint;
+import com.jung.reservation.user.domain.model.enumeration.PointHistoryType;
+import com.jung.reservation.user.infra.persistence.PointHistoryJpaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +40,10 @@ public class BookingInputPort implements BookingUseCase {
     private final PromotionRoomTypeOutputPort promotionRoomTypeOutputPort;
     private final UserOutputPort userOutputPort;
     private final BookingJpaRepository bookingJpaRepository;
+    private final PaymentJpaRepository paymentJpaRepository;
+    private final PaymentProcessorRegistry paymentProcessorRegistry;
+    private final UserPointOutputPort userPointOutputPort;
+    private final PointHistoryJpaRepository pointHistoryJpaRepository;
 
     @Override
     @Transactional
@@ -53,9 +67,7 @@ public class BookingInputPort implements BookingUseCase {
         handleStockResult(stockResult);
 
         try {
-            // 3. 결제 처리 (TODO: PaymentProcessor 통합)
-
-            // 4. DB 저장
+            // 3. Booking 저장 (PENDING)
             RoomType roomType = roomTypeOutputPort.findById(request.getRoomTypeId())
                     .orElseThrow(() -> new BusinessException(CommonErrorCode.ROOM_TYPE_NOT_FOUND));
             User user = userOutputPort.findById(request.getUserId())
@@ -64,10 +76,37 @@ public class BookingInputPort implements BookingUseCase {
             Booking booking = Booking.create(
                     request.getOrderId(), user, roomType, promotionRoomType,
                     request.getCheckInDate(), request.getCheckOutDate(), request.getTotalAmount());
-            booking.complete();
             bookingJpaRepository.save(booking);
 
-            // 5. 멱등성 키 COMPLETED로 변경
+            // 4. 결제 실행
+            for (BookingRequest.PaymentMethodRequest method : request.getPaymentMethods()) {
+                PaymentType paymentType = PaymentType.valueOf(method.getType());
+                PaymentProcessor processor = paymentProcessorRegistry.getProcessor(paymentType);
+                processor.pay(request.getUserId(), method.getAmount(), request.getOrderId(), request.getPaymentKey());
+            }
+
+            // 5. Payment 저장 + PointHistory 생성
+            for (BookingRequest.PaymentMethodRequest method : request.getPaymentMethods()) {
+                PaymentType paymentType = PaymentType.valueOf(method.getType());
+
+                Payment payment = Payment.create(booking, paymentType, method.getAmount());
+                if (request.getPaymentKey() != null) {
+                    payment.success(request.getPaymentKey());
+                }
+                paymentJpaRepository.save(payment);
+
+                // 포인트 사용 시 이력 저장
+                if (paymentType == PaymentType.Y_POINT) {
+                    UserPoint userPoint = userPointOutputPort.findByUserId(request.getUserId()).orElseThrow();
+                    pointHistoryJpaRepository.save(
+                            PointHistory.create(userPoint, method.getAmount(), booking, PointHistoryType.USE, "프로모션 예약 포인트 사용"));
+                }
+            }
+
+            // 6. Booking → COMPLETED
+            booking.complete();
+
+            // 7. 멱등성 키 COMPLETED로 변경
             stockOutputPort.completeIdempotency(request.getOrderId());
 
             return BookingResponse.builder()

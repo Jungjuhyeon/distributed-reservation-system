@@ -31,4 +31,15 @@ public class UserPoint extends BaseEntity {
     public static UserPoint create(User user, Long currentPoint) {
         return new UserPoint(user, currentPoint);
     }
+
+    public void deduct(Long amount) {
+        if (this.currentPoint < amount) {
+            throw new IllegalStateException("포인트가 부족합니다.");
+        }
+        this.currentPoint -= amount;
+    }
+
+    public void refund(Long amount) {
+        this.currentPoint += amount;
+    }
 }
