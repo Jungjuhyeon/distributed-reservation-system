@@ -91,7 +91,13 @@ public class BookingInputPort implements BookingUseCase {
                     request.getCheckInDate(), request.getCheckOutDate(), request.getTotalAmount());
             bookingOutputPort.save(booking);
 
-            // 3-1. room_availability 재고 차감 (체크인~체크아웃 전날 범위)
+            // 3-1. promotion_room_type.stock DB 차감 (비관적 락 + Redis 동기화)
+            PromotionRoomType lockedPromotionRoomType = promotionRoomTypeOutputPort
+                    .findWithLockById(request.getPromotionRoomTypeId())
+                    .orElseThrow(() -> new BusinessException(CommonErrorCode.PROMOTION_ROOM_TYPE_NOT_FOUND));
+            lockedPromotionRoomType.decreaseStock();
+
+            // 3-2. room_availability 재고 차감 (체크인~체크아웃 전날 범위, 비관적 락)
             List<RoomAvailability> availabilities = roomAvailabilityOutputPort
                     .findByRoomTypeIdAndDateRange(request.getRoomTypeId(), request.getCheckInDate(), request.getCheckOutDate().minusDays(1));
             for (RoomAvailability availability : availabilities) {

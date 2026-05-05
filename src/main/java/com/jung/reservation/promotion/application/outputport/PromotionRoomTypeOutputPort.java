@@ -6,4 +6,6 @@ import java.util.Optional;
 
 public interface PromotionRoomTypeOutputPort {
     Optional<PromotionRoomType> findById(Long id);
+
+    Optional<PromotionRoomType> findWithLockById(Long id);
 }

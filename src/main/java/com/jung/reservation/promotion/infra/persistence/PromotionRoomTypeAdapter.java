@@ -17,4 +17,9 @@ public class PromotionRoomTypeAdapter implements PromotionRoomTypeOutputPort {
     public Optional<PromotionRoomType> findById(Long id) {
         return promotionRoomTypeJpaRepository.findById(id);
     }
+
+    @Override
+    public Optional<PromotionRoomType> findWithLockById(Long id) {
+        return promotionRoomTypeJpaRepository.findWithLockById(id);
+    }
 }
