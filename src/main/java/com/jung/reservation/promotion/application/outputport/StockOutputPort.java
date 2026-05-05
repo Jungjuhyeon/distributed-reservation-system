@@ -6,4 +6,6 @@ public interface StockOutputPort {
     void completeIdempotency(String orderId);
 
     void releaseIdempotency(String orderId);
+
+    void restoreStock(Long promotionRoomTypeId);
 }

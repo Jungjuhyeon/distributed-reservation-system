@@ -146,6 +146,7 @@ public class BookingInputPort implements BookingUseCase {
                     .build();
 
         } catch (Exception e) {
+            stockOutputPort.restoreStock(request.getPromotionRoomTypeId());
             stockOutputPort.releaseIdempotency(request.getOrderId());
             throw e;
         }

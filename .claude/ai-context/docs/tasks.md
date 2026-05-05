@@ -62,7 +62,7 @@
 - [x] 부분 실패 롤백 테스트
 
 ## Phase 6: 장애 대응
-- [ ] 결제 실패 시 Redis 재고 복구 (INCR)
+- [x] 결제 실패 시 Redis 재고 복구 (INCR)
 - [ ] 포인트 차감 후 PG 실패 시 포인트 환불
 - [ ] build.gradle에 resilience4j 의존성 추가
 - [ ] Resilience4jConfig 설정

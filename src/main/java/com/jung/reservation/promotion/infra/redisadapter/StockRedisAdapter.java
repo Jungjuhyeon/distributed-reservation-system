@@ -51,4 +51,9 @@ public class StockRedisAdapter implements StockOutputPort {
     public void releaseIdempotency(String orderId) {
         redisTemplate.delete(RedisKeyPrefix.IDEMPOTENCY + orderId);
     }
+
+    @Override
+    public void restoreStock(Long promotionRoomTypeId) {
+        redisTemplate.opsForValue().increment(RedisKeyPrefix.STOCK + promotionRoomTypeId);
+    }
 }
