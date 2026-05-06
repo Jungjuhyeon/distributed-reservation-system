@@ -67,8 +67,8 @@ public class PaymentExecutionService {
             PaymentType paymentType = PaymentType.valueOf(method.getType());
 
             Payment payment = Payment.create(booking, paymentType, method.getAmount());
-            if (request.getPgTransactionId() != null) {
-                payment.success(request.getPgTransactionId());
+            if (paymentType != PaymentType.Y_POINT) {
+                payment.success(request.getPgTransactionId()); // PG 결제만 pgTransactionId 세팅
             }
             paymentOutputPort.save(payment);
 
