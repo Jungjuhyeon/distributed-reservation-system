@@ -32,4 +32,41 @@ class PromotionRoomTypeTest {
         assertThat(promotionRoomType.getPromotionAmount()).isEqualTo(99000L);
         assertThat(promotionRoomType.getStock()).isEqualTo(10);
     }
+
+    @Test
+    @DisplayName("재고 감소 가능 여부 확인")
+    void canDecreaseStock() {
+        User host = User.create("호스트", "010-0000-0000");
+        Accommodation accommodation = Accommodation.create(host, "제주 호텔", "제주시 중앙로 1");
+        RoomType roomType = RoomType.create(accommodation, "디럭스", 200000L, 2, 5,
+                LocalTime.of(15, 0), LocalTime.of(11, 0));
+        Promotion promotion = Promotion.create("초특가",
+                LocalDateTime.of(2026, 5, 1, 0, 0),
+                LocalDateTime.of(2026, 5, 31, 23, 59),
+                LocalTime.of(0, 0), LocalTime.of(1, 0));
+
+        PromotionRoomType withStock = PromotionRoomType.create(promotion, roomType, 99000L, 1);
+        PromotionRoomType empty = PromotionRoomType.create(promotion, roomType, 99000L, 0);
+
+        assertThat(withStock.canDecreaseStock()).isTrue();
+        assertThat(empty.canDecreaseStock()).isFalse();
+    }
+
+    @Test
+    @DisplayName("재고 감소")
+    void decreaseStock() {
+        User host = User.create("호스트", "010-0000-0000");
+        Accommodation accommodation = Accommodation.create(host, "제주 호텔", "제주시 중앙로 1");
+        RoomType roomType = RoomType.create(accommodation, "디럭스", 200000L, 2, 5,
+                LocalTime.of(15, 0), LocalTime.of(11, 0));
+        Promotion promotion = Promotion.create("초특가",
+                LocalDateTime.of(2026, 5, 1, 0, 0),
+                LocalDateTime.of(2026, 5, 31, 23, 59),
+                LocalTime.of(0, 0), LocalTime.of(1, 0));
+
+        PromotionRoomType prt = PromotionRoomType.create(promotion, roomType, 99000L, 10);
+        prt.decreaseStock();
+
+        assertThat(prt.getStock()).isEqualTo(9);
+    }
 }
