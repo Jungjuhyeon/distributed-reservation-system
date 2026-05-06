@@ -51,4 +51,8 @@ public class RoomAvailability extends BaseEntity {
     public void decreaseCount() {
         this.availableCount--;
     }
+
+    public void increaseCount() {
+        this.availableCount++;
+    }
 }

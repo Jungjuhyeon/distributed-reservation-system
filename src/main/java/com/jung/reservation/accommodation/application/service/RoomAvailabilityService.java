@@ -29,4 +29,15 @@ public class RoomAvailabilityService {
             availability.decreaseCount();
         }
     }
+
+    /**
+     * room_availability 재고 복구 (PENDING 배치 복구 시 사용)
+     */
+    public void restore(Long roomTypeId, LocalDate checkInDate, LocalDate checkOutDate) {
+        List<RoomAvailability> availabilities = roomAvailabilityOutputPort
+                .findByRoomTypeIdAndDateRange(roomTypeId, checkInDate, checkOutDate.minusDays(1));
+        for (RoomAvailability availability : availabilities) {
+            availability.increaseCount();
+        }
+    }
 }
