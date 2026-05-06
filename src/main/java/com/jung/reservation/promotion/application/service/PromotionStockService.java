@@ -6,6 +6,7 @@ import com.jung.reservation.promotion.application.outputport.PromotionRoomTypeOu
 import com.jung.reservation.promotion.application.outputport.StockOutputPort;
 import com.jung.reservation.promotion.application.outputport.StockResult;
 import com.jung.reservation.promotion.domain.model.PromotionRoomType;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -17,11 +18,23 @@ public class PromotionStockService {
 
     private final StockOutputPort stockOutputPort;
     private final PromotionRoomTypeOutputPort promotionRoomTypeOutputPort;
+    private final PromotionStockDbFallbackService dbFallbackService;
 
     /**
-     * Lua Script 실행 (시간검증 → Rate Limit → 멱등성 → Redis 재고차감)
+     * @return true = Redis 경로 (DB stock 추가 차감 필요), false = DB Fallback (이미 차감됨)
      */
-    public void reserveByLuaScript(Long userId, Long promotionRoomTypeId, String orderId) {
+    public boolean reserve(Long userId, Long promotionRoomTypeId, String orderId) {
+        try {
+            reserveByLuaScript(userId, promotionRoomTypeId, orderId);
+            return true;
+        } catch (CallNotPermittedException e) {
+            log.warn("[Redis 장애] DB Fallback 전환 - orderId: {}", orderId);
+            dbFallbackService.reserveByDbFallback(promotionRoomTypeId);
+            return false;
+        }
+    }
+
+    private void reserveByLuaScript(Long userId, Long promotionRoomTypeId, String orderId) {
         PromotionRoomType promotionRoomType = promotionRoomTypeOutputPort.findById(promotionRoomTypeId)
                 .orElseThrow(() -> new BusinessException(CommonErrorCode.PROMOTION_ROOM_TYPE_NOT_FOUND));
 
@@ -31,9 +44,6 @@ public class PromotionStockService {
         handleStockResult(result);
     }
 
-    /**
-     * DB promotion_room_type.stock 차감 (비관적 락)
-     */
     public void decreaseDbStock(Long promotionRoomTypeId) {
         PromotionRoomType locked = promotionRoomTypeOutputPort.findWithLockById(promotionRoomTypeId)
                 .orElseThrow(() -> new BusinessException(CommonErrorCode.PROMOTION_ROOM_TYPE_NOT_FOUND));
@@ -43,16 +53,14 @@ public class PromotionStockService {
         locked.decreaseStock();
     }
 
-    /**
-     * 멱등성 키 COMPLETED로 변경
-     */
     public void completeIdempotency(String orderId) {
-        stockOutputPort.completeIdempotency(orderId);
+        try {
+            stockOutputPort.completeIdempotency(orderId);
+        } catch (CallNotPermittedException e) {
+            log.warn("[Redis 장애] 멱등성 complete 스킵 - orderId: {}", orderId);
+        }
     }
 
-    /**
-     * Redis 재고 복구 + 멱등성 키 삭제 (결제 실패 시)
-     */
     public void rollbackRedisResources(Long promotionRoomTypeId, String orderId) {
         try {
             stockOutputPort.restoreStock(promotionRoomTypeId);

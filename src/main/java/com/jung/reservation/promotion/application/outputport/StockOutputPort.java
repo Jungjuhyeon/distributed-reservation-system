@@ -8,4 +8,6 @@ public interface StockOutputPort {
     void releaseIdempotency(String orderId);
 
     void restoreStock(Long promotionRoomTypeId);
+
+    void setStock(Long promotionRoomTypeId, int stock);
 }

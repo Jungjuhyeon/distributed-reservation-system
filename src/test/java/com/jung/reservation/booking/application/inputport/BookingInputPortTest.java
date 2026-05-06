@@ -11,6 +11,8 @@ import com.jung.reservation.booking.framework.web.dto.BookingResponse;
 import com.jung.reservation.booking.infra.persistence.BookingJpaRepository;
 import com.jung.reservation.common.exception.BusinessException;
 import com.jung.reservation.payment.domain.model.Payment;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import com.jung.reservation.payment.infra.persistence.PaymentJpaRepository;
 import com.jung.reservation.promotion.domain.model.Promotion;
 import com.jung.reservation.promotion.domain.model.PromotionRoomType;
@@ -69,6 +71,8 @@ class BookingInputPortTest {
     private PaymentJpaRepository paymentJpaRepository;
     @Autowired
     private PointHistoryJpaRepository pointHistoryJpaRepository;
+    @Autowired
+    private CircuitBreakerRegistry circuitBreakerRegistry;
 
     private RoomType savedRoomType;
     private PromotionRoomType savedPromotionRoomType;
@@ -77,8 +81,9 @@ class BookingInputPortTest {
 
     @BeforeEach
     void setUp() {
-        // Redis 초기화
+        // Redis 초기화 + Circuit Breaker 정상화
         redisTemplate.getConnectionFactory().getConnection().serverCommands().flushDb();
+        circuitBreakerRegistry.circuitBreaker("redisCircuitBreaker").transitionToClosedState();
 
         // 테스트 데이터
         User host = userJpaRepository.save(User.create("호스트", "010-0000-0000"));
@@ -90,9 +95,9 @@ class BookingInputPortTest {
                         LocalTime.of(15, 0), LocalTime.of(11, 0)));
 
         savedPromotion = promotionJpaRepository.save(
-                Promotion.create("5월 초특가", LocalDateTime.of(2026, 5, 1, 0, 0),
-                        LocalDateTime.of(2026, 5, 31, 23, 59),
-                        LocalTime.of(0, 0), LocalTime.of(1, 0)));
+                Promotion.create("5월 초특가", LocalDateTime.of(2020, 1, 1, 0, 0),
+                        LocalDateTime.of(2030, 12, 31, 23, 59),
+                        LocalTime.of(0, 0), LocalTime.of(23, 59)));
 
         savedPromotionRoomType = promotionRoomTypeJpaRepository.save(
                 PromotionRoomType.create(savedPromotion, savedRoomType, 99000L, 10));
@@ -230,5 +235,77 @@ class BookingInputPortTest {
         // 포인트 차감 안 됨 확인
         UserPoint userPoint = userPointJpaRepository.findByUserId(savedUser.getId()).orElseThrow();
         assertThat(userPoint.getCurrentPoint()).isEqualTo(100000L);
+    }
+
+    @Test
+    @DisplayName("Redis 정상 - 프로모션 예약 성공 (Redis stock + DB stock 모두 차감)")
+    void book_promotion_redis_normal() {
+        String orderId = "ORD-20260505-REDIS-OK";
+        redisTemplate.opsForValue().set("checkout:" + orderId, "99000");
+
+        BookingRequest request = new BookingRequest(
+                orderId, savedUser.getId(), savedRoomType.getId(), savedPromotionRoomType.getId(),
+                99000L, LocalDate.of(2026, 5, 10), LocalDate.of(2026, 5, 12), null,
+                List.of(new BookingRequest.PaymentMethodRequest("Y_POINT", 99000L)));
+
+        BookingResponse response = bookingUseCase.book(request);
+
+        // 예약 성공
+        assertThat(response.getBookingId()).isNotNull();
+        assertThat(response.getOrderId()).isEqualTo(orderId);
+
+        // Booking COMPLETED
+        Booking booking = bookingJpaRepository.findByOrderId(orderId).orElseThrow();
+        assertThat(booking.getStatus().name()).isEqualTo("COMPLETED");
+
+        // Redis stock 감소 확인
+        Object redisStock = redisTemplate.opsForValue().get("stock:promotionRoomType:" + savedPromotionRoomType.getId());
+        assertThat(Integer.parseInt(redisStock.toString())).isEqualTo(9);
+
+        // DB promotion stock 감소 확인
+        PromotionRoomType dbPrt = promotionRoomTypeJpaRepository.findById(savedPromotionRoomType.getId()).orElseThrow();
+        assertThat(dbPrt.getStock()).isEqualTo(9);
+
+        // 포인트 차감 확인
+        UserPoint userPoint = userPointJpaRepository.findByUserId(savedUser.getId()).orElseThrow();
+        assertThat(userPoint.getCurrentPoint()).isEqualTo(1000L);
+    }
+
+    @Test
+    @DisplayName("Redis 장애 - 프로모션 예약 DB Fallback 성공 (DB stock만 차감)")
+    void book_promotion_redis_down_dbFallback() {
+        CircuitBreaker cb = circuitBreakerRegistry.circuitBreaker("redisCircuitBreaker");
+        cb.transitionToOpenState();
+
+        String orderId = "ORD-20260505-REDIS-DOWN";
+        // Redis 다운이므로 checkout 캐시 없음 → DB Fallback으로 금액 검증
+
+        BookingRequest request = new BookingRequest(
+                orderId, savedUser.getId(), savedRoomType.getId(), savedPromotionRoomType.getId(),
+                99000L, LocalDate.of(2026, 5, 10), LocalDate.of(2026, 5, 12), null,
+                List.of(new BookingRequest.PaymentMethodRequest("Y_POINT", 99000L)));
+
+        BookingResponse response = bookingUseCase.book(request);
+
+        // 예약 성공
+        assertThat(response.getBookingId()).isNotNull();
+
+        // Booking COMPLETED
+        Booking booking = bookingJpaRepository.findByOrderId(orderId).orElseThrow();
+        assertThat(booking.getStatus().name()).isEqualTo("COMPLETED");
+
+        // DB promotion stock 감소 확인 (Bulkhead + DB Fallback으로 차감)
+        PromotionRoomType dbPrt = promotionRoomTypeJpaRepository.findById(savedPromotionRoomType.getId()).orElseThrow();
+        assertThat(dbPrt.getStock()).isEqualTo(9);
+
+        // Redis stock은 변경 안 됨 (Redis 다운)
+        Object redisStock = redisTemplate.opsForValue().get("stock:promotionRoomType:" + savedPromotionRoomType.getId());
+        assertThat(Integer.parseInt(redisStock.toString())).isEqualTo(10);
+
+        // 포인트 차감 확인
+        UserPoint userPoint = userPointJpaRepository.findByUserId(savedUser.getId()).orElseThrow();
+        assertThat(userPoint.getCurrentPoint()).isEqualTo(1000L);
+
+        cb.transitionToClosedState();
     }
 }

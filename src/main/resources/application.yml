@@ -33,3 +33,8 @@ resilience4j:
         permitted-number-of-calls-in-half-open-state: 3
         slow-call-duration-threshold: 500ms
         slow-call-rate-threshold: 80
+  bulkhead:
+    instances:
+      promotionDbFallback:
+        max-concurrent-calls: 10
+        max-wait-duration: 0ms

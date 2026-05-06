@@ -18,6 +18,8 @@ import com.jung.reservation.payment.application.service.PaymentExecutionService;
 import com.jung.reservation.payment.application.service.PaymentValidator;
 import com.jung.reservation.promotion.application.outputport.PromotionRoomTypeOutputPort;
 import com.jung.reservation.promotion.application.service.PromotionStockService;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import com.jung.reservation.promotion.domain.model.PromotionRoomType;
 import com.jung.reservation.user.application.outputport.UserOutputPort;
 import com.jung.reservation.user.domain.model.User;
@@ -41,6 +43,7 @@ public class BookingInputPort implements BookingUseCase {
     private final PromotionRoomTypeOutputPort promotionRoomTypeOutputPort;
     private final UserOutputPort userOutputPort;
     private final BookingOutputPort bookingOutputPort;
+    private final CircuitBreakerRegistry circuitBreakerRegistry;
 
     @Override
     @Transactional
@@ -54,17 +57,19 @@ public class BookingInputPort implements BookingUseCase {
 
     private BookingResponse bookPromotion(BookingRequest request) {
         // 2-1. 금액 검증 (Redis 캐시 우선, 실패 시 DB Fallback)
-        paymentValidator.validateAmount(request.getOrderId(), request.getTotalAmount(), request.getRoomTypeId());
+        paymentValidator.validateAmount(request.getOrderId(), request.getTotalAmount(), request.getRoomTypeId(), request.getPromotionRoomTypeId());
 
-        // 2-2. Lua Script (시간검증 → Rate Limit → 멱등성 → Redis 재고차감)
-        promotionStockService.reserveByLuaScript(request.getUserId(), request.getPromotionRoomTypeId(), request.getOrderId());
+        // 2-2. 재고 선점 (Redis Lua Script 우선, 장애 시 Bulkhead + DB Fallback)
+        boolean usedRedis = promotionStockService.reserve(request.getUserId(), request.getPromotionRoomTypeId(), request.getOrderId());
 
         try {
             // 3. Booking 저장 (PENDING)
             Booking booking = createAndSaveBooking(request);
 
-            // 3-1. promotion stock DB 차감 (비관적 락)
-            promotionStockService.decreaseDbStock(request.getPromotionRoomTypeId());
+            // 3-1. Redis 경로일 때만 DB stock 추가 차감 (Redis-DB 동기화)
+            if (usedRedis) {
+                promotionStockService.decreaseDbStock(request.getPromotionRoomTypeId());
+            }
 
             // 3-2. room_availability 차감 (비관적 락)
             roomAvailabilityService.decrease(request.getRoomTypeId(), request.getCheckInDate(), request.getCheckOutDate());
@@ -85,16 +90,22 @@ public class BookingInputPort implements BookingUseCase {
 
         } catch (BusinessException e) {
             log.warn("[결제 비즈니스 실패] 재고 즉시 복구 - orderId: {}, code: {}", request.getOrderId(), e.getErrorCode());
-            promotionStockService.rollbackRedisResources(request.getPromotionRoomTypeId(), request.getOrderId());
+            if (usedRedis) {
+                promotionStockService.rollbackRedisResources(request.getPromotionRoomTypeId(), request.getOrderId());
+            }
             throw e;
         } catch (PgPaymentException e) {
             if (e.getCategory() == PgErrorCategory.RETRYABLE) {
                 log.warn("[PG 결제 거절] 재고 복구 - orderId: {}, pgCode: {}", request.getOrderId(), e.getPgErrorCode());
-                promotionStockService.rollbackRedisResources(request.getPromotionRoomTypeId(), request.getOrderId());
+                if (usedRedis) {
+                    promotionStockService.rollbackRedisResources(request.getPromotionRoomTypeId(), request.getOrderId());
+                }
                 throw new BusinessException(CommonErrorCode.PAYMENT_REJECTED);
             } else if (e.getCategory() == PgErrorCategory.TEMPORARY) {
                 log.warn("[PG 일시 오류] 재고 복구 - orderId: {}, pgCode: {}", request.getOrderId(), e.getPgErrorCode());
-                promotionStockService.rollbackRedisResources(request.getPromotionRoomTypeId(), request.getOrderId());
+                if (usedRedis) {
+                    promotionStockService.rollbackRedisResources(request.getPromotionRoomTypeId(), request.getOrderId());
+                }
                 throw new BusinessException(CommonErrorCode.PAYMENT_TEMPORARY_ERROR);
             } else {
                 log.error("[PG 시스템 오류] 재고 잠금 유지 - orderId: {}, pgCode: {}", request.getOrderId(), e.getPgErrorCode());
@@ -118,7 +129,7 @@ public class BookingInputPort implements BookingUseCase {
         }
 
         // 2-3. 금액 검증 (Redis 캐시 우선, 실패 시 DB Fallback)
-        paymentValidator.validateAmount(request.getOrderId(), request.getTotalAmount(), request.getRoomTypeId());
+        paymentValidator.validateAmount(request.getOrderId(), request.getTotalAmount(), request.getRoomTypeId(), request.getPromotionRoomTypeId());
 
         try {
             // 3. Booking 저장 (PENDING)

@@ -61,4 +61,9 @@ public class StockRedisAdapter implements StockOutputPort {
     public void restoreStock(Long promotionRoomTypeId) {
         redisTemplate.opsForValue().increment(RedisKeyPrefix.STOCK + promotionRoomTypeId);
     }
+
+    @Override
+    public void setStock(Long promotionRoomTypeId, int stock) {
+        redisTemplate.opsForValue().set(RedisKeyPrefix.STOCK + promotionRoomTypeId, String.valueOf(stock));
+    }
 }
