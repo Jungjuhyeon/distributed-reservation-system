@@ -3,6 +3,7 @@ package com.jung.reservation.payment.application.inputport;
 import com.jung.reservation.payment.application.outputport.PgClient;
 import com.jung.reservation.payment.application.usecase.PaymentProcessor;
 import com.jung.reservation.payment.domain.model.enumeration.PaymentType;
+import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +18,7 @@ public class YPayPaymentProcessor implements PaymentProcessor {
         return PaymentType.Y_PAY;
     }
 
+    @Retry(name = "pgRetry")
     @Override
     public void pay(Long userId, Long amount, String orderId, String pgTransactionId) {
         pgClient.confirm(pgTransactionId, orderId, amount);

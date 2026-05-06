@@ -9,6 +9,7 @@ public enum CommonErrorCode implements ErrorCode{
     RESOURCE_NOT_FOUND(404, "4040", "요청한 리소스를 찾을 수 없습니다."),
     INTERNAL_SERVER_ERROR(500, "5000", "알 수 없는 에러가 발생했습니다."),
 
+    BOOKING_NOT_FOUND(404, "4045", "해당 예약을 찾을 수 없습니다."),
     ROOM_TYPE_NOT_FOUND(404, "4041", "해당 객실 타입을 찾을 수 없습니다."),
     PROMOTION_ROOM_TYPE_NOT_FOUND(404, "4042", "해당 프로모션 상품을 찾을 수 없습니다."),
     USER_NOT_FOUND(404, "4043", "해당 사용자를 찾을 수 없습니다."),

@@ -62,7 +62,7 @@ public class CheckoutInputPort implements CheckoutUseCase {
         // 6. Redis 주문서 캐시 저장 (결제 금액 위변조 방지)
         checkoutCacheOutputPort.saveCheckoutCache(orderId, totalAmount);
 
-        // 6. 응답 생성
+        // 7. 응답 생성
         return CheckoutResponse.mapToDTO(orderId, roomType, promotionRoomTypeId,
                 promotionAmount, totalAmount, user, userPoint);
     }

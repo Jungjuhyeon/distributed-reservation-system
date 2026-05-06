@@ -31,11 +31,23 @@ public class PaymentExecutionService {
 
     /**
      * 결제 실행 (부분 실패 시 보상 트랜잭션)
+     *
+     * Y_POINT를 항상 먼저 처리한다.
+     * 포인트 잔액 부족 시 PG를 호출하지 않으므로 외부 cancel API 호출이 불필요하다.
+     * Y_POINT가 없는 단건 결제는 정렬 후에도 순서가 동일하다.
      */
     public void execute(BookingRequest request) {
+        List<BookingRequest.PaymentMethodRequest> ordered = request.getPaymentMethods().stream()
+                .sorted((a, b) -> {
+                    boolean aIsPoint = PaymentType.valueOf(a.getType()) == PaymentType.Y_POINT;
+                    boolean bIsPoint = PaymentType.valueOf(b.getType()) == PaymentType.Y_POINT;
+                    return Boolean.compare(!aIsPoint, !bIsPoint);
+                })
+                .toList();
+
         List<BookingRequest.PaymentMethodRequest> successfulPayments = new ArrayList<>();
         try {
-            for (BookingRequest.PaymentMethodRequest method : request.getPaymentMethods()) {
+            for (BookingRequest.PaymentMethodRequest method : ordered) {
                 PaymentType paymentType = PaymentType.valueOf(method.getType());
                 PaymentProcessor processor = paymentProcessorRegistry.getProcessor(paymentType);
                 processor.pay(request.getUserId(), method.getAmount(), request.getOrderId(), request.getPgTransactionId());
@@ -69,13 +81,19 @@ public class PaymentExecutionService {
     }
 
     /**
-     * 보상 트랜잭션: 성공한 결제들 역순 취소
+     * 보상 트랜잭션: 외부 PG 결제만 역순 취소
+     * Y_POINT는 @Transactional 롤백이 자동으로 되돌리므로 명시적 cancel 불필요
      */
     private void compensate(BookingRequest request, List<BookingRequest.PaymentMethodRequest> successfulPayments) {
         for (int i = successfulPayments.size() - 1; i >= 0; i--) {
             BookingRequest.PaymentMethodRequest paid = successfulPayments.get(i);
+            PaymentType paymentType = PaymentType.valueOf(paid.getType());
+
+            if (paymentType == PaymentType.Y_POINT) {
+                continue; // DB 트랜잭션 롤백으로 자동 복구
+            }
+
             try {
-                PaymentType paymentType = PaymentType.valueOf(paid.getType());
                 PaymentProcessor processor = paymentProcessorRegistry.getProcessor(paymentType);
                 processor.cancel(request.getUserId(), paid.getAmount(), request.getOrderId(), request.getPgTransactionId());
             } catch (Exception cancelException) {

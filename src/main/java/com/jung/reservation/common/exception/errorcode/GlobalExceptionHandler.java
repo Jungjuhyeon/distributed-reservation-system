@@ -3,6 +3,7 @@ package com.jung.reservation.common.exception.errorcode;
 import com.jung.reservation.common.exception.BusinessException;
 import com.jung.reservation.common.exception.errorcode.CommonErrorCode;
 import com.jung.reservation.common.exception.errorcode.ErrorCode;
+import com.jung.reservation.payment.application.exception.PgUncertainException;
 import com.jung.reservation.common.exception.response.ErrorResponse;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import lombok.extern.slf4j.Slf4j;
@@ -61,9 +62,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return handleExceptionInternal(errorCode);
     }
 
+    @ExceptionHandler(PgUncertainException.class)
+    public ResponseEntity<Object> handlePgUncertain(final PgUncertainException e) {
+        log.error("[PG 결과 불명] PENDING 유지, 배치 복구 대기 - {}", e.getMessage());
+        return handleExceptionInternal(e.getErrorCode());
+    }
+
     @ExceptionHandler(CallNotPermittedException.class)
     public ResponseEntity<Object> handleCircuitBreakerOpen(final CallNotPermittedException e) {
-        log.error("[Circuit Breaker OPEN] Redis 장애 감지 - {}", e.getMessage());
+        log.error("[Circuit Breaker OPEN] 서비스 불가 - circuitBreaker: {}", e.getCausingCircuitBreakerName());
         final ErrorCode errorCode = CommonErrorCode.SERVICE_UNAVAILABLE;
         return handleExceptionInternal(errorCode);
     }

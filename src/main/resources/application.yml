@@ -33,6 +33,26 @@ resilience4j:
         permitted-number-of-calls-in-half-open-state: 3
         slow-call-duration-threshold: 500ms
         slow-call-rate-threshold: 80
+      # PG 장애 감지: 10건 중 60% 실패 or 50%가 3초 이상(slow) → OPEN
+      # 카드 한도초과(PgCardRejectedException)는 PG 자체는 정상 → ignore
+      pgCircuitBreaker:
+        sliding-window-size: 10
+        failure-rate-threshold: 60
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 2
+        slow-call-duration-threshold: 3s
+        slow-call-rate-threshold: 50
+        ignore-exceptions:
+          - com.jung.reservation.payment.application.exception.PgCardRejectedException
+  retry:
+    instances:
+      # TEMPORARY(PG 일시 오류)만 1회 재시도, 500ms 대기
+      # orderId를 PG 멱등성 키로 사용 → 재시도해도 중복 청구 없음
+      # RETRYABLE(한도초과)·SYSTEM(인증오류)는 재시도 금지
+      pgRetry:
+        max-attempts: 2
+        wait-duration: 500ms
+        retry-exception-predicate: com.jung.reservation.payment.application.service.PgTemporaryRetryPredicate
   bulkhead:
     instances:
       promotionDbFallback:

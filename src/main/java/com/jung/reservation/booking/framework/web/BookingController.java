@@ -17,7 +17,6 @@ public class BookingController {
 
     @PostMapping("/booking")
     public ResponseEntity<SuccessResponse<BookingResponse>> booking(
-            @RequestHeader("X-Idempotency-Key") String idempotencyKey,
             @RequestBody BookingRequest request) {
         BookingResponse response = bookingUseCase.book(request);
         return ResponseEntity.ok(SuccessResponse.success(response));

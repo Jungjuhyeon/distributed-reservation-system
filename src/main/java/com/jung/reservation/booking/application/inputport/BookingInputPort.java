@@ -14,12 +14,12 @@ import com.jung.reservation.common.exception.BusinessException;
 import com.jung.reservation.common.exception.errorcode.CommonErrorCode;
 import com.jung.reservation.payment.application.exception.PgErrorCategory;
 import com.jung.reservation.payment.application.exception.PgPaymentException;
+import com.jung.reservation.payment.application.exception.PgUncertainException;
 import com.jung.reservation.payment.application.service.PaymentExecutionService;
 import com.jung.reservation.payment.application.service.PaymentValidator;
 import com.jung.reservation.promotion.application.outputport.PromotionRoomTypeOutputPort;
 import com.jung.reservation.promotion.application.service.PromotionStockService;
-import io.github.resilience4j.circuitbreaker.CircuitBreaker;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import com.jung.reservation.promotion.domain.model.PromotionRoomType;
 import com.jung.reservation.user.application.outputport.UserOutputPort;
 import com.jung.reservation.user.domain.model.User;
@@ -43,10 +43,9 @@ public class BookingInputPort implements BookingUseCase {
     private final PromotionRoomTypeOutputPort promotionRoomTypeOutputPort;
     private final UserOutputPort userOutputPort;
     private final BookingOutputPort bookingOutputPort;
-    private final CircuitBreakerRegistry circuitBreakerRegistry;
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = PgUncertainException.class)
     public BookingResponse book(BookingRequest request) {
         // 0. 복합 결제 validation
         paymentValidator.validatePaymentCombination(request.getPaymentMethods());
@@ -102,18 +101,28 @@ public class BookingInputPort implements BookingUseCase {
                 }
                 throw new BusinessException(CommonErrorCode.PAYMENT_REJECTED);
             } else if (e.getCategory() == PgErrorCategory.TEMPORARY) {
-                log.warn("[PG 일시 오류] 재고 복구 - orderId: {}, pgCode: {}", request.getOrderId(), e.getPgErrorCode());
+                // Retry 소진 후 TEMPORARY → 재고 복구 (재시도해도 실패 확정)
+                log.warn("[PG 일시 오류] Retry 소진, 재고 복구 - orderId: {}, pgCode: {}", request.getOrderId(), e.getPgErrorCode());
                 if (usedRedis) {
                     promotionStockService.rollbackRedisResources(request.getPromotionRoomTypeId(), request.getOrderId());
                 }
                 throw new BusinessException(CommonErrorCode.PAYMENT_TEMPORARY_ERROR);
             } else {
-                log.error("[PG 시스템 오류] 재고 잠금 유지 - orderId: {}, pgCode: {}", request.getOrderId(), e.getPgErrorCode());
-                throw new BusinessException(CommonErrorCode.PAYMENT_SYSTEM_ERROR);
+                // SYSTEM: PG 결과 불분명 → Redis 잠금 유지, noRollbackFor → PENDING 커밋
+                log.error("[PG 시스템 오류] 결과 불분명, PENDING 유지 - orderId: {}, pgCode: {}", request.getOrderId(), e.getPgErrorCode());
+                throw new PgUncertainException(CommonErrorCode.PAYMENT_SYSTEM_ERROR);
             }
+        } catch (CallNotPermittedException e) {
+            // CB OPEN: PG 호출 자체 안 됨 → 결제 미발생 확실 → Redis 복구 후 롤백
+            log.error("[PG CB OPEN] PG 서비스 불가, 재고 복구 - orderId: {}", request.getOrderId());
+            if (usedRedis) {
+                promotionStockService.rollbackRedisResources(request.getPromotionRoomTypeId(), request.getOrderId());
+            }
+            throw e;
         } catch (Exception e) {
-            log.error("[시스템 장애] 결제 결과 불분명 - 재고 잠금 유지 - orderId: {}", request.getOrderId(), e);
-            throw new BusinessException(CommonErrorCode.PAYMENT_SYSTEM_ERROR);
+            // 타임아웃 등 결과 불분명 → Redis 잠금 유지, noRollbackFor → PENDING 커밋
+            log.error("[시스템 장애] 결과 불분명, PENDING 유지 - orderId: {}", request.getOrderId(), e);
+            throw new PgUncertainException(CommonErrorCode.PAYMENT_SYSTEM_ERROR);
         }
     }
 
@@ -157,15 +166,21 @@ public class BookingInputPort implements BookingUseCase {
                 log.warn("[일반 예약 PG 거절] orderId: {}, pgCode: {}", request.getOrderId(), e.getPgErrorCode());
                 throw new BusinessException(CommonErrorCode.PAYMENT_REJECTED);
             } else if (e.getCategory() == PgErrorCategory.TEMPORARY) {
-                log.warn("[일반 예약 PG 일시 오류] orderId: {}, pgCode: {}", request.getOrderId(), e.getPgErrorCode());
+                log.warn("[일반 예약 PG 일시 오류] Retry 소진 - orderId: {}, pgCode: {}", request.getOrderId(), e.getPgErrorCode());
                 throw new BusinessException(CommonErrorCode.PAYMENT_TEMPORARY_ERROR);
             } else {
-                log.error("[일반 예약 PG 시스템 오류] orderId: {}, pgCode: {}", request.getOrderId(), e.getPgErrorCode());
-                throw new BusinessException(CommonErrorCode.PAYMENT_SYSTEM_ERROR);
+                // SYSTEM: PG 결과 불분명 → noRollbackFor → PENDING 커밋
+                log.error("[일반 예약 PG 시스템 오류] 결과 불분명, PENDING 유지 - orderId: {}, pgCode: {}", request.getOrderId(), e.getPgErrorCode());
+                throw new PgUncertainException(CommonErrorCode.PAYMENT_SYSTEM_ERROR);
             }
+        } catch (CallNotPermittedException e) {
+            // CB OPEN: PG 호출 안 됨 → 결제 미발생 확실 → DB 트랜잭션 롤백
+            log.error("[일반 예약 PG CB OPEN] PG 서비스 불가 - orderId: {}", request.getOrderId());
+            throw e;
         } catch (Exception e) {
-            log.error("[일반 예약 시스템 장애] orderId: {}", request.getOrderId(), e);
-            throw new BusinessException(CommonErrorCode.PAYMENT_SYSTEM_ERROR);
+            // 타임아웃 등 결과 불분명 → noRollbackFor → PENDING 커밋
+            log.error("[일반 예약 시스템 장애] 결과 불분명, PENDING 유지 - orderId: {}", request.getOrderId(), e);
+            throw new PgUncertainException(CommonErrorCode.PAYMENT_SYSTEM_ERROR);
         }
     }
 

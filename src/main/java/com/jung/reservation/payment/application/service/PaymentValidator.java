@@ -27,7 +27,7 @@ public class PaymentValidator {
      */
     public void validatePaymentCombination(List<BookingRequest.PaymentMethodRequest> methods) {
         long primaryCount = methods.stream()
-                .filter(m -> !PaymentType.Y_POINT.name().equals(m.getType()))
+                .filter(m -> PaymentType.valueOf(m.getType()) != PaymentType.Y_POINT)
                 .count();
 
         if (primaryCount > 1) {
