@@ -74,6 +74,26 @@ class RoomAvailabilityServiceTest {
     }
 
     @Test
+    @DisplayName("객실 재고 복구 성공")
+    void restore_success() {
+        // 먼저 차감
+        roomAvailabilityService.decrease(savedRoomType.getId(),
+                LocalDate.of(2026, 5, 10), LocalDate.of(2026, 5, 12));
+
+        // 복구
+        roomAvailabilityService.restore(savedRoomType.getId(),
+                LocalDate.of(2026, 5, 10), LocalDate.of(2026, 5, 12));
+
+        List<RoomAvailability> availabilities = roomAvailabilityJpaRepository
+                .findByRoomTypeIdAndDateBetween(savedRoomType.getId(),
+                        LocalDate.of(2026, 5, 10), LocalDate.of(2026, 5, 11));
+
+        for (RoomAvailability availability : availabilities) {
+            assertThat(availability.getAvailableCount()).isEqualTo(3); // 차감 후 복구 → 원복
+        }
+    }
+
+    @Test
     @DisplayName("객실 재고 0일 때 ROOM_NOT_AVAILABLE")
     void decrease_noAvailability() {
         List<RoomAvailability> availabilities = roomAvailabilityJpaRepository

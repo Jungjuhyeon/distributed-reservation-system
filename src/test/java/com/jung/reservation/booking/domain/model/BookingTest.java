@@ -48,6 +48,22 @@ class BookingTest {
     }
 
     @Test
+    @DisplayName("Booking 실패 시 FAILED 상태")
+    void fail() {
+        User host = User.create("호스트", "010-0000-0000");
+        Accommodation accommodation = Accommodation.create(host, "제주 호텔", "제주시 중앙로 1");
+        RoomType roomType = RoomType.create(accommodation, "디럭스", 200000L, 2, 5,
+                LocalTime.of(15, 0), LocalTime.of(11, 0));
+        User user = User.create("정주현", "010-1234-5678");
+
+        Booking booking = Booking.create("ORD-TEST-004", user, roomType, null,
+                LocalDate.of(2026, 5, 10), LocalDate.of(2026, 5, 12), 200000L);
+        booking.fail();
+
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.FAILED);
+    }
+
+    @Test
     @DisplayName("Booking 취소 시 CANCELLED 상태")
     void cancel() {
         User host = User.create("호스트", "010-0000-0000");

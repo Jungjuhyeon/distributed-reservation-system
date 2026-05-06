@@ -55,4 +55,18 @@ class RoomAvailabilityTest {
 
         assertThat(availability.getAvailableCount()).isEqualTo(2);
     }
+
+    @Test
+    @DisplayName("객실 수 증가 (복구)")
+    void increaseCount() {
+        User host = User.create("호스트", "010-0000-0000");
+        Accommodation accommodation = Accommodation.create(host, "제주 호텔", "제주시 중앙로 1");
+        RoomType roomType = RoomType.create(accommodation, "디럭스", 200000L, 2, 5,
+                LocalTime.of(15, 0), LocalTime.of(11, 0));
+
+        RoomAvailability availability = RoomAvailability.create(roomType, LocalDate.of(2026, 5, 10), 2, 200000L);
+        availability.increaseCount();
+
+        assertThat(availability.getAvailableCount()).isEqualTo(3);
+    }
 }

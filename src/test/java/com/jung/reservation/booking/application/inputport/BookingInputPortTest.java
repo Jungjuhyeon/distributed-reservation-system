@@ -308,4 +308,65 @@ class BookingInputPortTest {
 
         cb.transitionToClosedState();
     }
+
+    @Test
+    @DisplayName("카드 거절(FAIL_REJECT) → PAYMENT_REJECTED 예외 + 프로모션 Redis 재고 복구")
+    void book_pgCardRejected_rollback() {
+        String orderId = "ORD-20260505-FAIL-REJECT";
+        redisTemplate.opsForValue().set("checkout:" + orderId, "99000");
+
+        BookingRequest request = new BookingRequest(
+                orderId, savedUser.getId(), savedRoomType.getId(), savedPromotionRoomType.getId(),
+                99000L, LocalDate.of(2026, 5, 10), LocalDate.of(2026, 5, 12), "FAIL_REJECT",
+                List.of(new BookingRequest.PaymentMethodRequest("CREDIT_CARD", 99000L)));
+
+        assertThatThrownBy(() -> bookingUseCase.book(request))
+                .isInstanceOf(com.jung.reservation.common.exception.BusinessException.class);
+
+        // Redis 재고 복구 확인 (차감됐다가 롤백)
+        Object redisStock = redisTemplate.opsForValue().get("stock:promotionRoomType:" + savedPromotionRoomType.getId());
+        assertThat(Integer.parseInt(redisStock.toString())).isEqualTo(10);
+    }
+
+    @Test
+    @DisplayName("PG CB OPEN → 프로모션 Redis 재고 복구")
+    void book_pgCircuitBreakerOpen_rollback() {
+        circuitBreakerRegistry.circuitBreaker("pgCircuitBreaker").transitionToOpenState();
+
+        String orderId = "ORD-20260505-CB-OPEN";
+        redisTemplate.opsForValue().set("checkout:" + orderId, "99000");
+
+        BookingRequest request = new BookingRequest(
+                orderId, savedUser.getId(), savedRoomType.getId(), savedPromotionRoomType.getId(),
+                99000L, LocalDate.of(2026, 5, 10), LocalDate.of(2026, 5, 12), "pg-txn-cb",
+                List.of(new BookingRequest.PaymentMethodRequest("CREDIT_CARD", 99000L)));
+
+        assertThatThrownBy(() -> bookingUseCase.book(request))
+                .isInstanceOf(io.github.resilience4j.circuitbreaker.CallNotPermittedException.class);
+
+        // Redis 재고 복구 확인
+        Object redisStock = redisTemplate.opsForValue().get("stock:promotionRoomType:" + savedPromotionRoomType.getId());
+        assertThat(Integer.parseInt(redisStock.toString())).isEqualTo(10);
+
+        circuitBreakerRegistry.circuitBreaker("pgCircuitBreaker").transitionToClosedState();
+    }
+
+    @Test
+    @DisplayName("PG SYSTEM 오류 → Booking PENDING 커밋 (noRollbackFor)")
+    void book_pgSystemError_pendingCommitted() {
+        String orderId = "ORD-20260505-FAIL-SYSTEM";
+        redisTemplate.opsForValue().set("checkout:" + orderId, "99000");
+
+        BookingRequest request = new BookingRequest(
+                orderId, savedUser.getId(), savedRoomType.getId(), savedPromotionRoomType.getId(),
+                99000L, LocalDate.of(2026, 5, 10), LocalDate.of(2026, 5, 12), "FAIL_SYSTEM",
+                List.of(new BookingRequest.PaymentMethodRequest("CREDIT_CARD", 99000L)));
+
+        assertThatThrownBy(() -> bookingUseCase.book(request))
+                .isInstanceOf(com.jung.reservation.payment.application.exception.PgUncertainException.class);
+
+        // PENDING 상태로 커밋됐는지 확인
+        Booking booking = bookingJpaRepository.findByOrderId(orderId).orElseThrow();
+        assertThat(booking.getStatus()).isEqualTo(com.jung.reservation.booking.domain.model.enumeration.BookingStatus.PENDING);
+    }
 }
