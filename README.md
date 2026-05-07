@@ -21,34 +21,22 @@
 
 ## 시스템 아키텍처
 
-헥사고날 아키텍처(Ports & Adapters) + DDD를 기반으로 설계했습니다. 도메인이 중심이고 외부 기술(DB, Redis, PG)은 포트 인터페이스를 통해서만 접근합니다.
+### 1. 코드 구조 — 헥사고날 아키텍처 (Ports & Adapters)
+
+도메인이 중심이고 외부 기술은 포트 인터페이스를 통해서만 접근합니다.
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                    Driving Adapters                       │
-│         [BookingController]  [CheckoutController]         │
-│              [PgWebhookController]                        │
-└────────────────────┬─────────────────────────────────────┘
-                     │ calls
-┌────────────────────▼─────────────────────────────────────┐
-│               Application Layer                           │
-│  [CheckoutInputPort]      [BookingInputPort]              │
-│       │                        │                          │
-│  [CheckoutUseCase]         [BookingUseCase]  (Ports)      │
-│                                │                          │
-│     [PaymentValidator] [PromotionStockService]            │
-│     [PaymentExecutionService] [RoomAvailabilityService]   │
-└──────────┬───────────────────────────┬────────────────────┘
-           │ implements                │ calls
-┌──────────▼───────────┐   ┌──────────▼───────────────────┐
-│    Domain Layer       │   │      Driven Adapters          │
-│  Booking / Payment    │   │  [PromotionRoomTypeAdapter]   │
-│  Promotion / User     │   │  [RoomAvailabilityAdapter]    │
-│  Accommodation        │   │  [StockRedisAdapter]          │
-│                       │   │  [CheckoutCacheAdapter]       │
-│  (순수 비즈니스 로직)  │   │  [IdempotencyRedisAdapter]   │
-└───────────────────────┘   └──────────────────────────────┘
+[Controller] → [InputPort/UseCase] → [Domain]
+                      ↓
+              [OutputPort Interface]
+                      ↓
+              [Adapter: DB / Redis / PG]
 ```
+
+- **Driving Adapter**: `BookingController`, `CheckoutController`, `PgWebhookController` — 외부 요청을 받아 UseCase를 호출합니다.
+- **Application Layer**: `BookingInputPort`, `CheckoutUseCase` 등 — 비즈니스 흐름을 조율합니다. `PaymentValidator`, `PromotionStockService`처럼 도메인 서비스도 여기에 위치합니다.
+- **Domain Layer**: `Booking`, `Payment`, `Promotion`, `User` 등 순수 비즈니스 로직만 담습니다. JPA, Redis 등 인프라 의존이 없습니다.
+- **Driven Adapter**: `StockRedisAdapter`, `RoomAvailabilityAdapter`, `CheckoutCacheAdapter` 등 — OutputPort를 구현해 실제 DB/Redis와 통신합니다.
 
 ### 요청 흐름 (프로모션 예약 기준)
 
