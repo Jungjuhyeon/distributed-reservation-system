@@ -50,6 +50,38 @@
 └───────────────────────┘   └──────────────────────────────┘
 ```
 
+### 요청 흐름 (프로모션 예약 기준)
+
+```
+Client
+  ↓ POST /api/booking
+BookingController
+  ↓
+BookingInputPort
+  ├─ PromotionStockService → StockRedisAdapter → Redis Lua Script (재고 선점)
+  ├─ RoomAvailabilityService → RoomAvailabilityAdapter → MySQL SELECT FOR UPDATE
+  ├─ BookingRepository → MySQL INSERT
+  └─ PaymentExecutionService → PaymentProcessor → PG 호출
+                                    ↑ Resilience4j Retry + Circuit Breaker
+```
+
+### 인프라 구성
+
+```
+[Client]
+   ↓
+[Spring Boot App]
+   ├── MySQL 8.0   : 예약 / 결제 / 재고 영속 데이터 (source of truth)
+   ├── Redis 7     : 재고 선점, 멱등성 키, Checkout 캐시, Rate Limit
+   └── PG (외부)   : 신용카드 / Y페이 결제 승인
+```
+
+| 장애 상황 | 대응 위치 |
+|-----------|-----------|
+| Redis 장애 | Circuit Breaker → Bulkhead(10) + DB 비관적 락 Fallback |
+| PG 일시 오류 | Resilience4j Retry (2회, 500ms 간격) |
+| PG 결과 불명 | PENDING 커밋 유지 → 웹훅 / 배치로 복구 |
+
 ### 도메인 구성
 
 | 도메인 | 책임 |
