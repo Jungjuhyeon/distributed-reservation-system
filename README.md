@@ -66,13 +66,20 @@
 
 <img width="1470" height="1132" alt="ERD" src="https://github.com/user-attachments/assets/4375708c-2653-4322-8d22-899409a6188a" />
 
-### 핵심 테이블 설명
+### 테이블 설명
 
-- **`booking`** — 예약 중심 테이블. `order_id`(UNIQUE)로 멱등성 보장. `status`: PENDING → COMPLETED
-- **`promotion_room_type`** — 프로모션 상품 재고(`stock`). Redis `stock:promotionRoomType:{id}`와 동기화
-- **`room_availability`** — 날짜별 객실 재고. 비관적 락으로 동시성 제어
-- **`payment`** — 결제 수단별 레코드. 복합 결제 시 booking당 N개 생성
-- **`point_history`** — 포인트 차감/환불 이력 추적
+| 테이블 | 주요 컬럼 | 설명 |
+|--------|-----------|------|
+| `users` | id, name, phone | 회원 정보 |
+| `user_point` | user_id(UNIQUE), current_point | 사용자별 포인트 잔액. user와 1:1 관계 |
+| `point_history` | user_point_id, amount, type, booking_id | 포인트 변동 이력. type: USE / REFUND / EARN / BURN |
+| `accommodation` | host_id, name, address, description | 숙소 정보. host는 users FK |
+| `room_type` | accommodation_id, name, amount, capacity, room_count, check_in_time, check_out_time | 객실 타입. 정가 및 수용 인원 정의 |
+| `room_availability` | room_type_id, date, available_count, amount | 날짜별 예약 가능 재고. (room_type_id, date) UNIQUE. 비관적 락으로 동시성 제어 |
+| `promotion` | name, start_date_time, end_date_time, daily_start_time, daily_end_time | 프로모션 이벤트. 전체 기간 + 매일 오픈 시간대 관리 |
+| `promotion_room_type` | promotion_id, room_type_id, promotion_amount, stock | 프로모션 상품. stock이 Redis `stock:promotionRoomType:{id}`와 동기화됨 |
+| `booking` | order_id(UNIQUE), user_id, room_type_id, promotion_room_type_id, check_in_date, check_out_date, status, total_amount | 예약 중심 테이블. order_id로 멱등성 보장. status: PENDING → COMPLETED / FAILED / CANCELLED |
+| `payment` | booking_id, payment_type, amount, status, pg_transaction_id | 결제 수단별 레코드. 복합 결제 시 booking당 N개 생성. type: CREDIT_CARD / Y_PAY / Y_POINT |
 
 ---
 
