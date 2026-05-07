@@ -122,59 +122,11 @@ PaymentProcessor (interface)
 
 ### 프로모션 예약 플로우 (정상)
 
-```mermaid
-sequenceDiagram
-    participant Client
-    participant CheckoutAPI
-    participant BookingAPI
-    participant Redis
-    participant MySQL
-    participant PG
-
-    Client->>CheckoutAPI: GET /api/checkout/{roomTypeId}?userId=&promotionRoomTypeId=
-    CheckoutAPI->>MySQL: 숙소/객실/프로모션 정보 조회
-    CheckoutAPI->>Redis: checkout:{orderId} 캐시 저장 (TTL 10분)
-    CheckoutAPI-->>Client: orderId, totalAmount 반환
-
-    Client->>BookingAPI: POST /api/booking (orderId, totalAmount, paymentMethods)
-    BookingAPI->>Redis: Lua Script 실행 (시간검증→Rate Limit→멱등성→재고차감)
-    Redis-->>BookingAPI: SUCCESS
-
-    BookingAPI->>MySQL: promotion_room_type stock -1 (UPDATE, JPA 캐시 우회)
-    BookingAPI->>MySQL: room_availability availableCount -1 (SELECT FOR UPDATE)
-    BookingAPI->>MySQL: Booking INSERT (status=PENDING)
-    BookingAPI->>PG: 결제 승인 요청
-    PG-->>BookingAPI: 승인 성공
-    BookingAPI->>MySQL: Payment/PointHistory 저장
-    BookingAPI->>MySQL: Booking status → COMPLETED
-    BookingAPI->>Redis: idempotency:booking:{orderId} → COMPLETED
-    BookingAPI-->>Client: bookingId 반환
-```
+<img width="1029" height="588" alt="image" src="https://github.com/user-attachments/assets/2e6e6eb1-5d6e-418d-8cf3-b16c94a1243d" />
 
 ### 재고 소진 / 결제 실패 플로우
 
-```mermaid
-sequenceDiagram
-    participant Client
-    participant BookingAPI
-    participant Redis
-    participant MySQL
-
-    Client->>BookingAPI: POST /api/booking
-    BookingAPI->>Redis: Lua Script 실행
-    Redis-->>BookingAPI: SOLD_OUT (재고 없음)
-    BookingAPI-->>Client: 409 SOLD_OUT
-
-    Note over Client,BookingAPI: 결제 실패 시 보상 트랜잭션
-    Client->>BookingAPI: POST /api/booking (결제 실패 케이스)
-    BookingAPI->>Redis: Lua Script → SUCCESS
-    BookingAPI->>MySQL: Booking INSERT (PENDING)
-    BookingAPI->>PG: 결제 요청
-    PG-->>BookingAPI: 결제 거절
-    BookingAPI->>Redis: stock +1 복구 (restoreStock)
-    BookingAPI->>Redis: idempotency 키 삭제 (releaseIdempotency)
-    BookingAPI-->>Client: 4xx PAYMENT_REJECTED
-```
+<img width="1026" height="531" alt="image" src="https://github.com/user-attachments/assets/26246b47-b3a0-4142-8210-4fd972629799" />
 
 ---
 
