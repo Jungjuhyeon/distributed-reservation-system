@@ -161,8 +161,9 @@ Redis가 회복되어 Circuit Breaker가 CLOSE 상태로 전환될 때, `Circuit
 **orderId 일원화**: Checkout API에서 `ORD-yyyyMMdd-UUID` 형식의 orderId를 서버가 발급합니다. 이 키가 PG 결제 요청 키, DB `booking.order_id`(UNIQUE), Redis 멱등성 키(`idempotency:booking:{orderId}`)에 모두 동일하게 사용됩니다. 하나의 키로 세 가지를 보장하므로 추적이 단순하고, Checkout 캐시에 금액도 함께 저장해 금액 위변조 방지까지 겸합니다.
 
 멱등성 계층:
-1. **Redis**: `SET NX`로 PROCESSING 중복 차단 (TTL 30초)
-2. **DB**: `booking.order_id UNIQUE` 제약으로 INSERT 수준에서 최종 방어 (Redis 장애 시에도 동작)
+1. **Redis Lua Script (SET NX)**: 예약 진행 중 동일 orderId 재요청을 즉시 차단합니다. (TTL 30초)
+2. **Redis completeIdempotency**: 예약 완료 후 orderId를 완료 상태로 전환해 이후 재요청도 차단합니다.
+3. **DB `booking.order_id UNIQUE`**: Redis 장애 시에도 INSERT 수준에서 중복을 최종 방어합니다.
 
 ---
 
