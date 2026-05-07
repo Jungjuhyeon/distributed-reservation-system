@@ -163,21 +163,7 @@ k6 유저 범위 - userId: 3 ~ 502
 # k6 프로파일로 실행 (컨테이너 환경)
 docker compose --profile k6 up
 
-# 또는 로컬 k6 설치 후 직접 실행
-k6 run -e BASE_USER_ID=3 k6/booking-concurrency.js
 ```
-
-k6 웹 대시보드: `http://localhost:5665`
-
-### 4. 서비스 종료
-
-```bash
-docker compose down
-```
-
-> **주의**: Redis만 재시작하면 Lettuce 연결 문제로 Circuit Breaker가 열릴 수 있습니다. 재시작이 필요하면 반드시 `docker compose down && docker compose up -d`로 전체 재시작하세요.
-
----
 
 ## API 목록
 
