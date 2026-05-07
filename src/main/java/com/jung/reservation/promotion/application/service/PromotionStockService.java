@@ -45,12 +45,10 @@ public class PromotionStockService {
     }
 
     public void decreaseDbStock(Long promotionRoomTypeId) {
-        PromotionRoomType locked = promotionRoomTypeOutputPort.findWithLockById(promotionRoomTypeId)
-                .orElseThrow(() -> new BusinessException(CommonErrorCode.PROMOTION_ROOM_TYPE_NOT_FOUND));
-        if (!locked.canDecreaseStock()) {
+        int updated = promotionRoomTypeOutputPort.decreaseStockById(promotionRoomTypeId);
+        if (updated == 0) {
             throw new BusinessException(CommonErrorCode.SOLD_OUT);
         }
-        locked.decreaseStock();
     }
 
     public void completeIdempotency(String orderId) {

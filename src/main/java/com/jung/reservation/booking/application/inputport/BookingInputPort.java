@@ -62,16 +62,14 @@ public class BookingInputPort implements BookingUseCase {
         boolean usedRedis = promotionStockService.reserve(request.getUserId(), request.getPromotionRoomTypeId(), request.getOrderId());
 
         try {
-            // 3. Booking 저장 (PENDING)
-            Booking booking = createAndSaveBooking(request);
-
-            // 3-1. Redis 경로일 때만 DB stock 추가 차감 (Redis-DB 동기화)
+            // 3. DB 락 먼저 획득 (데드락 방지: INSERT 전에 락 순서 확정)
             if (usedRedis) {
                 promotionStockService.decreaseDbStock(request.getPromotionRoomTypeId());
             }
-
-            // 3-2. room_availability 차감 (비관적 락)
             roomAvailabilityService.decrease(request.getRoomTypeId(), request.getCheckInDate(), request.getCheckOutDate());
+
+            // 3-1. 락 획득 후 Booking 저장 (PENDING)
+            Booking booking = createAndSaveBooking(request);
 
             // 4. 결제 실행
             paymentExecutionService.execute(request);

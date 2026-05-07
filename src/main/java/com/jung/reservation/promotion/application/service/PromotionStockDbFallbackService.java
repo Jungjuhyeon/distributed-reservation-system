@@ -28,10 +28,10 @@ public class PromotionStockDbFallbackService {
 
         validatePromotionTime(locked.getPromotion());
 
-        if (!locked.canDecreaseStock()) {
+        int updated = promotionRoomTypeOutputPort.decreaseStockById(promotionRoomTypeId);
+        if (updated == 0) {
             throw new BusinessException(CommonErrorCode.SOLD_OUT);
         }
-        locked.decreaseStock();
 
         log.info("[DB Fallback] 재고 선점 성공 - promotionRoomTypeId: {}", promotionRoomTypeId);
     }

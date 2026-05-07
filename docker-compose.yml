@@ -45,6 +45,27 @@ services:
       SPRING_DATA_REDIS_HOST: redis
     restart: on-failure
 
+  k6:
+    image: grafana/k6:latest
+    container_name: reservation-k6
+    ports:
+      - "5665:5665"
+    depends_on:
+      app:
+        condition: service_started
+    volumes:
+      - ./k6:/scripts
+    environment:
+      BASE_URL: http://app:8080
+      BASE_USER_ID: "3"
+      ROOM_TYPE_ID: "1"
+      PROMOTION_ROOM_TYPE_ID: "1"
+      K6_WEB_DASHBOARD: "true"
+      K6_WEB_DASHBOARD_EXPORT: /scripts/report.html
+    command: run /scripts/booking-concurrency.js
+    profiles:
+      - k6
+
 volumes:
   mysql-data:
   redis-data:

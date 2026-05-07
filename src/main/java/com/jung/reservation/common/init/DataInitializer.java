@@ -26,6 +26,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 앱 시작 시 테스트용 초기 데이터를 DB + Redis에 자동 세팅한다.
@@ -104,11 +106,28 @@ public class DataInitializer implements CommandLineRunner {
         log.info("[DataInitializer] Redis 세팅 완료 - stock: {}, sale_start: 즉시 오픈",
                 PROMOTION_STOCK);
 
+        // 6. k6 동시성 테스트용 유저 300명 생성 (각 VU가 다른 userId → rate limit 회피)
+        List<User> k6Users = new ArrayList<>();
+        for (int i = 0; i < 500; i++) {
+            k6Users.add(User.create("k6유저" + i,
+                    "010-" + String.format("%04d", i / 100) + "-" + String.format("%04d", i + 1)));
+        }
+        List<User> savedK6Users = userJpaRepository.saveAll(k6Users);
+        long k6BaseUserId = savedK6Users.get(0).getId();
+
+        // k6 유저 UserPoint 일괄 생성 (checkout API 호출 시 필요, CREDIT_CARD 사용이므로 0원)
+        List<UserPoint> k6Points = new ArrayList<>();
+        for (User k6User : savedK6Users) {
+            k6Points.add(UserPoint.create(k6User, 100000L));
+        }
+        userPointJpaRepository.saveAll(k6Points);
+
         log.info("[DataInitializer] 초기 데이터 세팅 완료!");
         log.info("=================================================");
         log.info("테스트 계정 - userId: {}", user.getId());
         log.info("roomTypeId: {}", roomType.getId());
         log.info("promotionRoomTypeId: {}", promotionRoomType.getId());
+        log.info("k6 유저 범위 - userId: {} ~ {}", k6BaseUserId, k6BaseUserId + 499);
         log.info("=================================================");
     }
 }

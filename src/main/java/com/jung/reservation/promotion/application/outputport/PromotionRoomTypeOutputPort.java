@@ -8,4 +8,6 @@ public interface PromotionRoomTypeOutputPort {
     Optional<PromotionRoomType> findById(Long id);
 
     Optional<PromotionRoomType> findWithLockById(Long id);
+
+    int decreaseStockById(Long id);
 }
